@@ -6,6 +6,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Build.VERSION_CODES
 import androidx.annotation.RequiresApi
+import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.bg.ServiceNotification
 import io.nekohasekai.sagernet.database.DataStore
@@ -24,7 +25,13 @@ class NativeInterface : BoxPlatformInterface, NB4AInterface {
     //  libbox interface
 
     override fun autoDetectInterfaceControl(fd: Int) {
-        val vpnService = DataStore.vpnService ?: return
+        val vpnService = DataStore.vpnService
+        if (vpnService == null) {
+            // While a VPN service stops it is cleared before the core is closed; a socket dialed
+            // then would go into the VPN, so fail it. Other modes have nothing to protect.
+            if (DataStore.serviceMode == Key.MODE_VPN) throw Exception("VPN service stopped")
+            return
+        }
         // an unprotected socket would be routed back into the VPN (routing loop), fail the dial instead
         if (!vpnService.protect(fd)) {
             Logs.w("protect failed: fd=$fd")

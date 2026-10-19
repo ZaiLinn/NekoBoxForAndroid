@@ -201,12 +201,11 @@ class VpnService : BaseVpnService(),
         return conn!!.fd
     }
 
+    /** null networks: the VPN follows the system default network. */
     fun updateUnderlyingNetwork(builder: Builder? = null) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            SagerNet.underlyingNetwork?.let {
-                builder?.setUnderlyingNetworks(arrayOf(SagerNet.underlyingNetwork))
-                    ?: setUnderlyingNetworks(arrayOf(SagerNet.underlyingNetwork))
-            }
+            val networks = SagerNet.underlyingNetwork?.let { arrayOf(it) }
+            builder?.setUnderlyingNetworks(networks) ?: setUnderlyingNetworks(networks)
         }
     }
 

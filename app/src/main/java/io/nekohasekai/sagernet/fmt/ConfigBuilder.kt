@@ -704,10 +704,10 @@ fun buildConfig(
                     ip_is_private = true
                 })
             }
-            // block mcast
+            // block mcast (and IPv4 broadcast); destination only: sing-box ANDs a destination
+            // and a source condition, so with both the rule never matched
             route.rules.add(Rule_DefaultOptions().apply {
                 ip_cidr = listOf("224.0.0.0/3", "ff00::/8")
-                source_ip_cidr = listOf("224.0.0.0/3", "ff00::/8")
                 action = "reject"
             })
             // FakeDNS obj

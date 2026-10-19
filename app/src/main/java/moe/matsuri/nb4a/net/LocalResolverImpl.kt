@@ -3,9 +3,12 @@ package moe.matsuri.nb4a.net
 import android.net.DnsResolver
 import android.os.Build
 import android.os.CancellationSignal
+import android.net.Network
 import android.system.ErrnoException
+import android.system.OsConstants
 import androidx.annotation.RequiresApi
 import io.nekohasekai.sagernet.SagerNet
+import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.ktx.Logs
 import io.nekohasekai.sagernet.ktx.runOnIoDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +24,20 @@ object LocalResolverImpl : LocalDNSTransport {
 
     private const val RCODE_NXDOMAIN = 3
 
+    /**
+     * Without the underlying network a query takes the default network, which in the VPN
+     * service is the VPN itself: it would come back to the core and loop. Fail it instead.
+     *
+     * @return false if [ctx] got an error and the query must not run
+     */
+    private fun canQuery(ctx: ExchangeContext, network: Network?): Boolean {
+        if (network == null && DataStore.vpnService != null) {
+            ctx.errnoCode(OsConstants.ENETUNREACH)
+            return false
+        }
+        return true
+    }
+
     override fun raw(): Boolean {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
     }
@@ -34,6 +51,8 @@ object LocalResolverImpl : LocalDNSTransport {
 
     @RequiresApi(Build.VERSION_CODES.Q)
     override fun exchange(ctx: ExchangeContext, message: ByteArray) {
+        val network = SagerNet.underlyingNetwork
+        if (!canQuery(ctx, network)) return
         val signal = CancellationSignal()
         ctx.onCancel(signal::cancel)
 
@@ -54,7 +73,7 @@ object LocalResolverImpl : LocalDNSTransport {
         }
 
         DnsResolver.getInstance().rawQuery(
-            SagerNet.underlyingNetwork,
+            network,
             message,
             DnsResolver.FLAG_NO_RETRY,
             Dispatchers.IO.asExecutor(),
@@ -65,6 +84,8 @@ object LocalResolverImpl : LocalDNSTransport {
 
     override fun lookup(ctx: ExchangeContext, network: String, domain: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val queryNetwork = SagerNet.underlyingNetwork
+            if (!canQuery(ctx, queryNetwork)) return
             val signal = CancellationSignal()
             ctx.onCancel(signal::cancel)
 
@@ -105,7 +126,7 @@ object LocalResolverImpl : LocalDNSTransport {
             }
             if (type != null) {
                 DnsResolver.getInstance().query(
-                    SagerNet.underlyingNetwork,
+                    queryNetwork,
                     domain,
                     type,
                     DnsResolver.FLAG_NO_RETRY,
@@ -115,7 +136,7 @@ object LocalResolverImpl : LocalDNSTransport {
                 )
             } else {
                 DnsResolver.getInstance().query(
-                    SagerNet.underlyingNetwork,
+                    queryNetwork,
                     domain,
                     DnsResolver.FLAG_NO_RETRY,
                     Dispatchers.IO.asExecutor(),
@@ -128,11 +149,10 @@ object LocalResolverImpl : LocalDNSTransport {
                 // 老版本系统，继续用阻塞的 InetAddress
                 try {
                     val u = SagerNet.underlyingNetwork
-                    val answer = try {
-                        u?.getAllByName(domain)
-                    } catch (e: UnknownHostException) {
-                        null
-                    } ?: InetAddress.getAllByName(domain)
+                    if (!canQuery(ctx, u)) return@runOnIoDispatcher
+                    // No fallback to InetAddress after a failed lookup on the underlying network:
+                    // in the VPN service it would resolve through the VPN, back into the core.
+                    val answer = u?.getAllByName(domain) ?: InetAddress.getAllByName(domain)
                     if (answer != null) {
                         ctx.success(answer.mapNotNull { it.hostAddress }.joinToString("\n"))
                     } else {

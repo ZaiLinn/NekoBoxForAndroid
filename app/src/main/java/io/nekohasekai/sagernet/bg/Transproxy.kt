@@ -65,6 +65,8 @@ object Transproxy {
         if (!bin.exists()) throw RootException(app.getString(R.string.transproxy_failed, "$BIN not found"))
         flagFile.createNewFile()
         File(runDir, "hev.yml").writeText(hevConfig())
+        // run by the root watchdog when the core dies without a cleanup (crash, force stop)
+        File(runDir, "cleanup.sh").writeText(xtablesWait(cleanupScript(byWatchdog = true)))
         try {
             runSu(cleanupScript() + "\n" + setupScript(bin))
         } catch (e: Exception) {
@@ -104,8 +106,11 @@ object Transproxy {
         val dir = runDir.absolutePath
         val corePid = Process.myPid()
         appendLine("set -e")
-        // pin the core's LMK priority (system_server keeps resetting it, so re-pin in a loop)
-        appendLine("nohup sh -c 'while true; do echo $OOM_SCORE > /proc/$corePid/oom_score_adj 2>/dev/null; sleep 5; done' >/dev/null 2>&1 &")
+        // Pin the core's LMK priority (system_server keeps resetting it, so re-pin in a loop).
+        // The loop runs only while the core is alive (same pid and start time, as pids are
+        // reused), then removes the rules itself, since the dead core can't do it.
+        appendLine("CORE_START=\$(cut -d' ' -f22 /proc/$corePid/stat)")
+        appendLine("nohup sh -c 'while [ \"\$(cut -d\" \" -f22 /proc/$corePid/stat 2>/dev/null)\" = \"'\$CORE_START'\" ]; do echo $OOM_SCORE > /proc/$corePid/oom_score_adj 2>/dev/null; sleep 5; done; rm -f \"$dir/oomguard.pid\"; sh \"$dir/cleanup.sh\"' >/dev/null 2>&1 &")
         appendLine("echo \$! > '$dir/oomguard.pid'")
         appendLine("if [ ! -e /dev/net/tun ]; then mkdir -p /dev/net; mknod /dev/net/tun c 10 200; chmod 666 /dev/net/tun; fi")
         appendLine("nohup '${bin.absolutePath}' '$dir/hev.yml' >'$dir/hev.log' 2>&1 &")
@@ -139,16 +144,26 @@ object Transproxy {
      * mangle OUTPUT marking, mirroring what the VPN mode captures:
      * all apps / bypass mode mark every remaining uid, proxy mode only the selected apps.
      */
-    private fun markRules(cmd: String, bypass: List<String>) = buildString {
+    private fun markRules(cmd: String, bypass: List<String>): String {
+        val (proxyOnly, uids) = selectedApps()
+        return markRules(cmd, bypass, Process.myUid(), proxyOnly, uids)
+    }
+
+    internal fun markRules(
+        cmd: String, bypass: List<String>, coreUid: Int, proxyOnly: Boolean, uids: Set<Int>,
+    ) = buildString {
         val mangle = "$cmd -t mangle"
         appendLine("$mangle -N $CHAIN")
         // never touch the core's own (outbound) connections, or they would loop into the tun
-        appendLine("$mangle -A $CHAIN -m owner --uid-owner ${Process.myUid()} -j RETURN")
-        val (proxyOnly, uids) = selectedApps()
+        appendLine("$mangle -A $CHAIN -m owner --uid-owner $coreUid -j RETURN")
         if (!proxyOnly) for (uid in uids) appendLine("$mangle -A $CHAIN -m owner --uid-owner $uid -j RETURN")
-        // DNS before the LAN bypass, so queries to the router are resolved by the core too
-        appendLine("$mangle -A $CHAIN -p udp --dport 53 -j MARK --set-xmark $MARK")
-        appendLine("$mangle -A $CHAIN -p tcp --dport 53 -j MARK --set-xmark $MARK")
+        // DNS before the LAN bypass, so queries to the router are resolved by the core too;
+        // in proxy-only mode only the selected apps' DNS, like the VPN mode
+        val owners = if (proxyOnly) uids.map { "-m owner --uid-owner $it " } else listOf("")
+        for (owner in owners) {
+            appendLine("$mangle -A $CHAIN ${owner}-p udp --dport 53 -j MARK --set-xmark $MARK")
+            appendLine("$mangle -A $CHAIN ${owner}-p tcp --dport 53 -j MARK --set-xmark $MARK")
+        }
         for (cidr in bypass) appendLine("$mangle -A $CHAIN -d $cidr -j RETURN")
         if (proxyOnly) {
             for (uid in uids) appendLine("$mangle -A $CHAIN -m owner --uid-owner $uid -j MARK --set-xmark $MARK")
@@ -157,6 +172,13 @@ object Transproxy {
         }
         appendLine("$mangle -A OUTPUT -j $CHAIN")
     }
+
+    /**
+     * Adds -w to every iptables / ip6tables call: netd holds the xtables lock often, and without
+     * waiting a call fails at once, which under `set -e` fails the whole setup.
+     */
+    internal fun xtablesWait(script: String) =
+        script.replace(Regex("(?<![\\w-])(ip6?tables)(?= )"), "$1 -w")
 
     /** IPv6 disabled: reject captured apps' native IPv6 so they fall back to IPv4 instead of leaking. */
     private fun v6RejectRules() = buildString {
@@ -229,7 +251,8 @@ object Transproxy {
         return !DataStore.bypass to uids
     }
 
-    private fun cleanupScript() = buildString {
+    /** @param byWatchdog run by the watchdog after the core died: its pid may be reused already */
+    private fun cleanupScript(byWatchdog: Boolean = false) = buildString {
         val dir = runDir.absolutePath
         for (cmd in listOf("iptables", "ip6tables")) {
             appendLine("while $cmd -t mangle -D OUTPUT -j $CHAIN 2>/dev/null; do :; done")
@@ -256,13 +279,17 @@ object Transproxy {
         // tun device, hev and the LMK guard
         appendLine("ip link set dev $TUN down 2>/dev/null")
         appendLine("[ -f '$dir/hev.pid' ] && kill \$(cat '$dir/hev.pid') 2>/dev/null; rm -f '$dir/hev.pid'")
-        appendLine("[ -f '$dir/oomguard.pid' ] && kill \$(cat '$dir/oomguard.pid') 2>/dev/null; rm -f '$dir/oomguard.pid'")
-        appendLine("echo 0 > /proc/${Process.myPid()}/oom_score_adj 2>/dev/null")
+        if (byWatchdog) {
+            appendLine("rm -f '$dir/active'")
+        } else {
+            appendLine("[ -f '$dir/oomguard.pid' ] && kill \$(cat '$dir/oomguard.pid') 2>/dev/null; rm -f '$dir/oomguard.pid'")
+            appendLine("echo 0 > /proc/${Process.myPid()}/oom_score_adj 2>/dev/null")
+        }
         append("true")
     }
 
     private fun runSu(script: String) {
-        val file = File(runDir, "script.sh").apply { writeText(script) }
+        val file = File(runDir, "script.sh").apply { writeText(xtablesWait(script)) }
         val process = try {
             ProcessBuilder("su", "-c", "sh '${file.absolutePath}'").redirectErrorStream(true).start()
         } catch (e: IOException) {
