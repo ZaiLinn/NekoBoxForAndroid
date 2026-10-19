@@ -47,13 +47,13 @@ object RawUpdater : GroupUpdater() {
     ) {
 
         val link = subscription.link
-        var proxies: List<AbstractBean>
+        val parsed: ProxyParseResult<AbstractBean>
         if (link.startsWith("content://")) {
             val contentText = app.contentResolver.openInputStream(link.toUri())
                 ?.bufferedReader()
                 ?.readText()
 
-            proxies = contentText?.let { parseRaw(contentText) }
+            parsed = contentText?.let { parseRawResult(contentText) }
                 ?: error(app.getString(R.string.no_proxies_found_in_subscription))
         } else {
 
@@ -70,7 +70,7 @@ object RawUpdater : GroupUpdater() {
                 setURL(subscription.link)
                 setUserAgent(subscription.customUserAgent.takeIf { it.isNotBlank() } ?: USER_AGENT)
             }.execute()
-            proxies = parseRaw(Util.getStringBox(response.contentString))
+            parsed = parseRawResult(Util.getStringBox(response.contentString))
                 ?: error(app.getString(R.string.no_proxies_found))
 
             subscription.subscriptionUserinfo =
@@ -87,6 +87,9 @@ object RawUpdater : GroupUpdater() {
                 }
             }
         }
+
+        var proxies = parsed.proxies
+        val invalidLinks = parsed.skipped[ImportSkipReason.INVALID_PROXY_LINK] ?: 0
 
         val proxiesMap = LinkedHashMap<String, AbstractBean>()
         for (proxy in proxies) {
@@ -151,7 +154,33 @@ object RawUpdater : GroupUpdater() {
         Logs.d("toDelete profiles: ${toDelete.size}")
         Logs.d("toReplace profiles: ${toReplace.size}")
 
+        val verdict = SubscriptionShrinkGuard.check(
+            exists.size, nameMap.size, toDelete.size, invalidLinks
+        )
+        if (verdict == SubscriptionShrinkGuard.Verdict.EMPTY) {
+            error(app.getString(R.string.no_proxies_found_in_subscription))
+        }
+        if (verdict != SubscriptionShrinkGuard.Verdict.OK) {
+            Logs.w("Suspicious update: $verdict, exists ${exists.size}, new ${nameMap.size}, delete ${toDelete.size}, invalid $invalidLinks")
+            // only a user can tell a provider's removal from a broken response
+            val apply = byUser && userInterface != null && userInterface.confirm(
+                app.getString(
+                    R.string.subscription_update_suspicious_confirm,
+                    nameMap.size, exists.size, invalidLinks, toDelete.size
+                )
+            )
+            if (!apply) {
+                error(
+                    app.getString(
+                        R.string.subscription_update_suspicious,
+                        nameMap.size, exists.size, invalidLinks
+                    )
+                )
+            }
+        }
+
         val toUpdate = ArrayList<ProxyEntity>()
+        val toAdd = ArrayList<ProxyEntity>()
         val added = mutableListOf<String>()
         val updated = mutableMapOf<String, String>()
         val deleted = toDelete.map { it.displayName() }
@@ -189,34 +218,43 @@ object RawUpdater : GroupUpdater() {
                 }
             } else {
                 changed++
-                SagerDatabase.proxyDao.addProxy(
-                    ProxyEntity(
-                        groupId = proxyGroup.id, userOrder = userOrder
-                    ).apply {
-                        putBean(bean)
-                    })
+                toAdd.add(ProxyEntity(groupId = proxyGroup.id, userOrder = userOrder).apply {
+                    putBean(bean)
+                })
                 added.add(name)
                 Logs.d("Inserted profile: $name")
             }
             userOrder++
         }
 
-        SagerDatabase.proxyDao.updateProxy(toUpdate).also {
-            Logs.d("Updated profiles: $it")
+        // one transaction, so a failed write leaves the group as it was
+        val oldLastUpdated = subscription.lastUpdated
+        try {
+            SagerDatabase.instance.runInTransaction {
+                toAdd.forEach { SagerDatabase.proxyDao.addProxy(it) }
+                Logs.d("Inserted profiles: ${toAdd.size}")
+
+                SagerDatabase.proxyDao.updateProxy(toUpdate).also {
+                    Logs.d("Updated profiles: $it")
+                }
+
+                SagerDatabase.proxyDao.deleteProxy(toDelete).also {
+                    Logs.d("Deleted profiles: $it")
+                }
+
+                val existCount = SagerDatabase.proxyDao.countByGroup(proxyGroup.id).toInt()
+
+                if (existCount != proxies.size) {
+                    Logs.e("Exist profiles: $existCount, new profiles: ${proxies.size}")
+                }
+
+                subscription.lastUpdated = (System.currentTimeMillis() / 1000).toInt()
+                SagerDatabase.groupDao.updateGroup(proxyGroup)
+            }
+        } catch (e: Exception) {
+            subscription.lastUpdated = oldLastUpdated
+            throw e
         }
-
-        SagerDatabase.proxyDao.deleteProxy(toDelete).also {
-            Logs.d("Deleted profiles: $it")
-        }
-
-        val existCount = SagerDatabase.proxyDao.countByGroup(proxyGroup.id).toInt()
-
-        if (existCount != proxies.size) {
-            Logs.e("Exist profiles: $existCount, new profiles: ${proxies.size}")
-        }
-
-        subscription.lastUpdated = (System.currentTimeMillis() / 1000).toInt()
-        SagerDatabase.groupDao.updateGroup(proxyGroup)
         finishUpdate(proxyGroup)
 
         userInterface?.onUpdateSuccess(
@@ -224,8 +262,15 @@ object RawUpdater : GroupUpdater() {
         )
     }
 
-    @Suppress("UNCHECKED_CAST")
     suspend fun parseRaw(text: String, fileName: String = ""): List<AbstractBean>? {
+        return parseRawResult(text, fileName)?.proxies
+    }
+
+    /** Like [parseRaw], also reporting the skipped lines of a list of proxy links. */
+    @Suppress("UNCHECKED_CAST")
+    suspend fun parseRawResult(
+        text: String, fileName: String = "",
+    ): ProxyParseResult<AbstractBean>? {
 
         val proxies = mutableListOf<AbstractBean>()
 
@@ -677,7 +722,7 @@ object RawUpdater : GroupUpdater() {
                         }
                     }
                 }
-                return proxies
+                return ProxyParseResult(proxies)
             } catch (e: YAMLException) {
                 Logs.w(e)
             }
@@ -688,7 +733,7 @@ object RawUpdater : GroupUpdater() {
                     if (fileName.isNotBlank()) it.name = fileName.removeSuffix(".conf")
                     it
                 })
-                return proxies
+                return ProxyParseResult(proxies)
             } catch (e: Exception) {
                 Logs.w(e)
             }
@@ -696,19 +741,20 @@ object RawUpdater : GroupUpdater() {
 
         try {
             val json = JSONTokener(text).nextValue()
-            return parseJSON(json)
+            return ProxyParseResult(parseJSON(json))
         } catch (ignored: Exception) {
         }
 
         try {
-            return parseProxies(text.decodeBase64UrlSafe()).takeIf { it.isNotEmpty() }
-                ?: error("Not found")
+            return parseProxiesResult(text.decodeBase64UrlSafe())
+                .takeIf { it.proxies.isNotEmpty() } ?: error("Not found")
         } catch (e: Exception) {
             Logs.w(e)
         }
 
         try {
-            return parseProxies(text).takeIf { it.isNotEmpty() } ?: error("Not found")
+            return parseProxiesResult(text).takeIf { it.proxies.isNotEmpty() }
+                ?: error("Not found")
         } catch (e: SubscriptionFoundException) {
             throw e
         } catch (ignored: Exception) {

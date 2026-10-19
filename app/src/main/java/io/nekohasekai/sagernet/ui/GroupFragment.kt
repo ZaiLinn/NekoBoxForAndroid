@@ -198,31 +198,25 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group),
             return groupList[position].id
         }
 
-        private val updated = HashSet<ProxyGroup>()
+        // keyed by id: ProxyGroup is a data class, its hash changes with userOrder
+        private val updated = LinkedHashMap<Long, ProxyGroup>()
 
         fun move(from: Int, to: Int) {
-            val first = groupList[from]
-            var previousOrder = first.userOrder
-            val (step, range) = if (from < to) Pair(1, from until to) else Pair(
-                -1, to + 1 downTo from
-            )
-            for (i in range) {
-                val next = groupList[i + step]
-                val order = next.userOrder
-                next.userOrder = previousOrder
-                previousOrder = order
-                groupList[i] = next
-                updated.add(next)
+            val moved = groupList.moveKeepingOrder(from, to, { it.userOrder }) { group, order ->
+                group.userOrder = order
             }
-            first.userOrder = previousOrder
-            groupList[to] = first
-            updated.add(first)
+            if (moved.isEmpty()) return
+            moved.forEach { updated[it.id] = it }
             notifyItemMoved(from, to)
         }
 
-        fun commitMove() = runOnDefaultDispatcher {
-            updated.forEach { SagerDatabase.groupDao.updateGroup(it) }
+        fun commitMove() {
+            if (updated.isEmpty()) return
+            val groups = updated.values.toList()
             updated.clear()
+            runOnDefaultDispatcher {
+                groups.forEach { SagerDatabase.groupDao.updateGroup(it) }
+            }
         }
 
         fun remove(index: Int) {

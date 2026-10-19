@@ -58,20 +58,24 @@ class BaseService {
         var notification: ServiceNotification? = null
         var upstreamNetwork: Network? = null
         var screenOffAt = 0L
-        private var lastResetAt = 0L
+        // called from the main thread and, before API 26, the connectivity thread
+        private val resetter = ConnectionResetter(
+            WAKE_RESET_DEBOUNCE,
+            SystemClock::elapsedRealtime,
+            { runOnDefaultDispatcher { it.run() } },
+        ) { Libcore.resetAllConnections(true) }.apply {
+            onError = { Logs.w(it) }
+        }
 
         /**
          * @param force network changed: always reset, connections made on the old network are dead
          */
         fun resetConnections(reason: String, force: Boolean) {
-            val now = SystemClock.elapsedRealtime()
-            if (!force && now - lastResetAt < WAKE_RESET_DEBOUNCE) {
+            if (resetter.request(force)) {
+                Logs.d("$reason, reset connections")
+            } else {
                 Logs.d("$reason, skip reset connections (just reset)")
-                return
             }
-            lastResetAt = now
-            Logs.d("$reason, reset connections")
-            runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
         }
 
         val receiver = broadcastReceiver { ctx, intent ->

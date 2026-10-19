@@ -143,6 +143,12 @@
     <plurals name="added">
         <item quantity="other">已新增 %d 個代理</item>
     </plurals>
+    <plurals name="import_skipped">
+        <item quantity="other">略過 %d 行</item>
+    </plurals>
+    <plurals name="import_failed">
+        <item quantity="other">%d 個儲存失敗</item>
+    </plurals>
     <string name="undo">復原</string>
     <!-- tasker -->
     <!-- status -->
@@ -254,6 +260,8 @@
     <string name="insecure">不安全</string>
     <string name="deprecated">已被取代</string>
     <string name="no_proxies_found_in_subscription">未在此訂閱中找到代理</string>
+    <string name="subscription_update_suspicious_confirm">本次更新有 %1$d 個節點（更新前 %2$d 個，解析失敗 %3$d 條），將刪除 %4$d 個舊節點。確定套用嗎？</string>
+    <string name="subscription_update_suspicious">更新未套用，內容可能不完整：%1$d 個節點（更新前 %2$d 個，解析失敗 %3$d 條）。已保留舊節點，手動更新可確認套用。</string>
     <string name="no_proxies_found_in_file">未在此檔案中找到代理</string>
     <string name="no_proxies_found_in_clipboard">未在剪貼簿中找到代理</string>
     <string name="deduplication">重複資料刪除</string>
@@ -289,6 +297,7 @@
     <string name="donate_info">貓貓很可愛 請給貓貓錢</string>
     <string name="connection_test_unreachable">無法連線</string>
     <string name="connection_test_timeout">逾時</string>
+    <string name="connection_test_no_network">沒有可用網路</string>
     <string name="append_http_proxy">為 VPN 附加 HTTP 代理</string>
     <string name="append_http_proxy_sum">HTTP 代理將直接被支援的瀏覽器/應用程式使用，而無需經過虛擬網路卡（Android 10+）</string>
     <string name="trojan_provider">Trojan 提供程式</string>

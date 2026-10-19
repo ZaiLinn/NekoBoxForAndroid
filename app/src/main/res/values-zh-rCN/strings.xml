@@ -147,6 +147,12 @@
     <plurals name="added">
         <item quantity="other">已添加 %d 个配置</item>
     </plurals>
+    <plurals name="import_skipped">
+        <item quantity="other">跳过 %d 行</item>
+    </plurals>
+    <plurals name="import_failed">
+        <item quantity="other">%d 个保存失败</item>
+    </plurals>
     <string name="undo">还原</string>
     <!-- tasker -->
     <!-- status -->
@@ -290,6 +296,7 @@
     <string name="connection_test_tcp_ping_unavailable">TCPing 不可用</string>
     <string name="connection_test_refused">连接重置</string>
     <string name="connection_test_timeout">超时</string>
+    <string name="connection_test_no_network">没有可用网络</string>
     <string name="connection_test_unreachable">不可达</string>
     <string name="tile_title">开关</string>
     <string name="append_http_proxy">追加 HTTP 代理至 VPN</string>
@@ -337,6 +344,8 @@
     <string name="profile_import">导入配置</string>
     <string name="profile_import_message">确认要导入配置 %s？</string>
     <string name="no_proxies_found_in_subscription">未在此订阅内找到服务器配置</string>
+    <string name="subscription_update_suspicious_confirm">本次更新有 %1$d 个节点（更新前 %2$d 个，解析失败 %3$d 条），将删除 %4$d 个旧节点。确定应用吗？</string>
+    <string name="subscription_update_suspicious">更新未应用，内容可能不完整：%1$d 个节点（更新前 %2$d 个，解析失败 %3$d 条）。已保留旧节点，手动更新可确认应用。</string>
     <string name="action_export">导出</string>
     <string name="clear_profiles_message">您确定要清空该分组吗\?</string>
     <string name="remote_dns">远程 DNS</string>

@@ -15,6 +15,7 @@ import io.nekohasekai.sagernet.database.preference.RoomPreferenceDataStore
 import io.nekohasekai.sagernet.ktx.boolean
 import io.nekohasekai.sagernet.ktx.int
 import io.nekohasekai.sagernet.ktx.long
+import io.nekohasekai.sagernet.ktx.RunGuard
 import io.nekohasekai.sagernet.ktx.parsePort
 import io.nekohasekai.sagernet.ktx.string
 import io.nekohasekai.sagernet.ktx.stringToInt
@@ -42,7 +43,9 @@ object DataStore : OnPreferenceDataStoreChangeListener {
 
     // main
 
-    var runningTest = false
+    /** Held while a connection test of the main process runs. */
+    val connectionTest = RunGuard()
+    val runningTest get() = connectionTest.isRunning
 
     fun currentGroupId(): Long {
         val currentSelected = configurationStore.getLong(Key.PROFILE_GROUP, -1)

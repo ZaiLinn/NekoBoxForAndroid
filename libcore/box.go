@@ -32,7 +32,18 @@ func init() {
 	dialer.DoNotSelectInterface = true
 }
 
-var mainInstance *BoxInstance
+var (
+	// mainInstanceAccess guards mainInstance and protectCloser. Lock order: BoxInstance.access
+	// first, then mainInstanceAccess.
+	mainInstanceAccess sync.Mutex
+	mainInstance       *BoxInstance
+)
+
+func getMainInstance() *BoxInstance {
+	mainInstanceAccess.Lock()
+	defer mainInstanceAccess.Unlock()
+	return mainInstance
+}
 
 func VersionBox() string {
 	version := []string{
@@ -59,7 +70,12 @@ func VersionBox() string {
 }
 
 func ResetAllConnections(system bool) {
+	// a panic here would crash the app through JNI
+	defer device.DeferPanicToError("ResetAllConnections", func(err error) { log.Println(err) })
 	if system {
+		// hold the lock so that the instance is not closed while its network is reset
+		mainInstanceAccess.Lock()
+		defer mainInstanceAccess.Unlock()
 		if mainInstance != nil && mainInstance.Box != nil {
 			// close tracked connections, and also let outbounds (mux / QUIC based
 			// protocols such as hysteria2 and tuic) and DNS transports drop their
@@ -159,10 +175,12 @@ func (b *BoxInstance) Close() (err error) {
 	b.state = 2
 
 	// clear main instance
+	mainInstanceAccess.Lock()
 	if mainInstance == b {
 		mainInstance = nil
 		goServeProtect(false)
 	}
+	mainInstanceAccess.Unlock()
 
 	// close box
 	if b.cancel != nil {
@@ -189,6 +207,8 @@ func (b *BoxInstance) Wake() {
 }
 
 func (b *BoxInstance) SetAsMain() {
+	mainInstanceAccess.Lock()
+	defer mainInstanceAccess.Unlock()
 	mainInstance = b
 	goServeProtect(true)
 }
@@ -231,19 +251,22 @@ func UrlTest(i *BoxInstance, link string, timeout int32) (latency int32, err err
 		}
 		return speedtest.UrlTest(boxapi.CreateProxyHttpClient(i.Box, connectionTracker), link, timeout, speedtest.UrlTestStandard_RTT)
 	}
+	// read once, Close may clear it meanwhile
+	main := getMainInstance()
 	// test direct
-	if mainInstance == nil {
+	if main == nil {
 		return speedtest.UrlTest(boxapi.CreateProxyHttpClient(nil, nil), link, timeout, speedtest.UrlTestStandard_RTT)
 	}
 	// test mainInstance
-	if mainInstance.v2api != nil {
-		connectionTracker = mainInstance.v2api.StatsService()
+	if main.v2api != nil {
+		connectionTracker = main.v2api.StatsService()
 	}
-	return speedtest.UrlTest(boxapi.CreateProxyHttpClient(mainInstance.Box, connectionTracker), link, timeout, speedtest.UrlTestStandard_RTT)
+	return speedtest.UrlTest(boxapi.CreateProxyHttpClient(main.Box, connectionTracker), link, timeout, speedtest.UrlTestStandard_RTT)
 }
 
 var protectCloser io.Closer
 
+// goServeProtect must be called with mainInstanceAccess held.
 func goServeProtect(start bool) {
 	if protectCloser != nil {
 		protectCloser.Close()
