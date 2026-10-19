@@ -341,3 +341,11 @@ operator fun <K, V> MutableMap<K, V>.setValue(thisRef: K, property: KProperty<*>
     }
 
 }
+
+/** Closes, ignoring errors (replaces okhttp3.internal.closeQuietly, an internal OkHttp API). */
+fun java.io.Closeable.closeQuietly() {
+    try {
+        close()
+    } catch (_: Exception) {
+    }
+}

@@ -29,6 +29,7 @@ import org.ini4j.Ini
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
+import org.yaml.snakeyaml.LoaderOptions
 import org.yaml.snakeyaml.TypeDescription
 import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.error.YAMLException
@@ -41,6 +42,18 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+
+/**
+ * The YAML loader for Clash subscriptions, which are untrusted: SnakeYAML 2 rejects global
+ * tags (!!java.Class) by default. Large Clash configs reuse anchors far more than the default
+ * limit of 50 (upstream #1042).
+ */
+fun newClashYaml() = Yaml(LoaderOptions().apply {
+    maxAliasesForCollections = 1000
+    codePointLimit = 32 * 1024 * 1024
+}).apply {
+    addTypeDescription(TypeDescription(String::class.java, "str"))
+}
 
 @Suppress("EXPERIMENTAL_API_USAGE")
 object RawUpdater : GroupUpdater() {
@@ -345,9 +358,7 @@ object RawUpdater : GroupUpdater() {
 
             try {
 
-                val yaml = Yaml().apply {
-                    addTypeDescription(TypeDescription(String::class.java, "str"))
-                }.loadAs(text, Map::class.java)
+                val yaml = newClashYaml().loadAs(text, Map::class.java)
 
                 val globalClientFingerprint = yaml["global-client-fingerprint"]?.toString() ?: ""
 

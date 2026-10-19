@@ -1,0 +1,909 @@
+diff --git a/common/dialer/default.go b/common/dialer/default.go
+index 0f900c4c..d0627872 100644
+--- a/common/dialer/default.go
++++ b/common/dialer/default.go
+@@ -90,7 +90,7 @@ func NewDefault(ctx context.Context, options option.DialerOptions) (*DefaultDial
+ 
+ 	if networkManager != nil {
+ 		defaultOptions := networkManager.DefaultOptions()
+-		if defaultOptions.BindInterface != "" {
++		if defaultOptions.BindInterface != "" && !disableDefaultBind {
+ 			bindFunc := control.BindToInterface(networkManager.InterfaceFinder(), defaultOptions.BindInterface, -1)
+ 			dialer.Control = control.Append(dialer.Control, bindFunc)
+ 			listener.Control = control.Append(listener.Control, bindFunc)
+@@ -144,8 +144,7 @@ func NewDefault(ctx context.Context, options option.DialerOptions) (*DefaultDial
+ 		dialer.Timeout = C.TCPConnectTimeout
+ 	}
+ 	// TODO: Add an option to customize the keep alive period
+-	dialer.KeepAlive = C.TCPKeepAliveInitial
+-	dialer.Control = control.Append(dialer.Control, control.SetKeepAlivePeriod(C.TCPKeepAliveInitial, C.TCPKeepAliveInterval))
++	setKeepAliveConfig(&dialer, C.TCPKeepAliveInitial, C.TCPKeepAliveInterval)
+ 	var udpFragment bool
+ 	if options.UDPFragment != nil {
+ 		udpFragment = *options.UDPFragment
+diff --git a/common/dialer/default_go123.go b/common/dialer/default_go123.go
+new file mode 100644
+index 00000000..67a789da
+--- /dev/null
++++ b/common/dialer/default_go123.go
+@@ -0,0 +1,16 @@
++//go:build go1.23
++
++package dialer
++
++import (
++	"net"
++	"time"
++)
++
++func setKeepAliveConfig(dialer *net.Dialer, idle time.Duration, interval time.Duration) {
++	dialer.KeepAliveConfig = net.KeepAliveConfig{
++		Enable:   true,
++		Idle:     idle,
++		Interval: interval,
++	}
++}
+diff --git a/common/dialer/default_nongo123.go b/common/dialer/default_nongo123.go
+new file mode 100644
+index 00000000..3a5ad15e
+--- /dev/null
++++ b/common/dialer/default_nongo123.go
+@@ -0,0 +1,15 @@
++//go:build !go1.23
++
++package dialer
++
++import (
++	"net"
++	"time"
++
++	"github.com/sagernet/sing/common/control"
++)
++
++func setKeepAliveConfig(dialer *net.Dialer, idle time.Duration, interval time.Duration) {
++	dialer.KeepAlive = idle
++	dialer.Control = control.Append(dialer.Control, control.SetKeepAlivePeriod(idle, interval))
++}
+diff --git a/common/dialer/dialer.go b/common/dialer/dialer.go
+index bfa8af21..2ba559f9 100644
+--- a/common/dialer/dialer.go
++++ b/common/dialer/dialer.go
+@@ -145,3 +145,7 @@ type ParallelNetworkDialer interface {
+ 	DialParallelNetwork(ctx context.Context, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error)
+ 	ListenSerialNetworkPacket(ctx context.Context, destination M.Socksaddr, destinationAddresses []netip.Addr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.PacketConn, netip.Addr, error)
+ }
++
++type PacketDialerWithDestination interface {
++	ListenPacketWithDestination(ctx context.Context, destination M.Socksaddr) (net.PacketConn, netip.Addr, error)
++}
+diff --git a/common/listener/listener.go b/common/listener/listener.go
+index 7d49d664..cc27a62e 100644
+--- a/common/listener/listener.go
++++ b/common/listener/listener.go
+@@ -151,6 +151,7 @@ func ListenNetworkNamespace[T any](nameOrPath string, block func() (T, error)) (
+ 		if err != nil {
+ 			return common.DefaultValue[T](), E.Cause(err, "get current netns")
+ 		}
++		defer currentNs.Close()
+ 		defer netns.Set(currentNs)
+ 		var targetNs netns.NsHandle
+ 		if strings.HasPrefix(nameOrPath, "/") {
+diff --git a/constant/version.go b/constant/version.go
+index c6d485a7..6f8ff4ae 100644
+--- a/constant/version.go
++++ b/constant/version.go
+@@ -1,3 +1,3 @@
+ package constant
+ 
+-var Version = "1.12.19-neko-1"
++var Version = "1.12.25-neko-z1"
+diff --git a/dns/client.go b/dns/client.go
+index 939ca48c..ed4e8207 100644
+--- a/dns/client.go
++++ b/dns/client.go
+@@ -144,7 +144,11 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
+ 		if c.cache != nil {
+ 			cond, loaded := c.cacheLock.LoadOrStore(question, make(chan struct{}))
+ 			if loaded {
+-				<-cond
++				select {
++				case <-cond:
++				case <-ctx.Done():
++					return nil, ctx.Err()
++				}
+ 			} else {
+ 				defer func() {
+ 					c.cacheLock.Delete(question)
+@@ -154,7 +158,11 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
+ 		} else if c.transportCache != nil {
+ 			cond, loaded := c.transportCacheLock.LoadOrStore(question, make(chan struct{}))
+ 			if loaded {
+-				<-cond
++				select {
++				case <-cond:
++				case <-ctx.Done():
++					return nil, ctx.Err()
++				}
+ 			} else {
+ 				defer func() {
+ 					c.transportCacheLock.Delete(question)
+@@ -232,8 +240,10 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
+ 	if responseChecker != nil {
+ 		var rejected bool
+ 		// TODO: add accept_any rule and support to check response instead of addresses
+-		if response.Rcode != dns.RcodeSuccess || len(response.Answer) == 0 {
++		if response.Rcode != dns.RcodeSuccess && response.Rcode != dns.RcodeNameError {
+ 			rejected = true
++		} else if len(response.Answer) == 0 {
++			rejected = !responseChecker(nil)
+ 		} else {
+ 			rejected = !responseChecker(MessageToAddresses(response))
+ 		}
+diff --git a/dns/router.go b/dns/router.go
+index 8de1f6a9..7380c4cc 100644
+--- a/dns/router.go
++++ b/dns/router.go
+@@ -273,13 +273,7 @@ func (r *Router) Exchange(ctx context.Context, message *mDNS.Msg, options adapte
+ 					return action.Response(message), nil
+ 				}
+ 			}
+-			var responseCheck func(responseAddrs []netip.Addr) bool
+-			if rule != nil && rule.WithAddressLimit() {
+-				responseCheck = func(responseAddrs []netip.Addr) bool {
+-					metadata.DestinationAddresses = responseAddrs
+-					return rule.MatchAddressLimit(metadata)
+-				}
+-			}
++			responseCheck := addressLimitResponseCheck(rule, metadata)
+ 			if dnsOptions.Strategy == C.DomainStrategyAsIS {
+ 				dnsOptions.Strategy = r.defaultDomainStrategy
+ 			}
+@@ -378,9 +372,11 @@ func (r *Router) Lookup(ctx context.Context, domain string, options adapter.DNSQ
+ 				case *R.RuleActionReject:
+ 					return nil, &R.RejectedError{Cause: action.Error(ctx)}
+ 				case *R.RuleActionPredefined:
++					responseAddrs = nil
+ 					if action.Rcode != mDNS.RcodeSuccess {
+ 						err = RcodeError(action.Rcode)
+ 					} else {
++						err = nil
+ 						for _, answer := range action.Answer {
+ 							switch record := answer.(type) {
+ 							case *mDNS.A:
+@@ -393,13 +389,7 @@ func (r *Router) Lookup(ctx context.Context, domain string, options adapter.DNSQ
+ 					goto response
+ 				}
+ 			}
+-			var responseCheck func(responseAddrs []netip.Addr) bool
+-			if rule != nil && rule.WithAddressLimit() {
+-				responseCheck = func(responseAddrs []netip.Addr) bool {
+-					metadata.DestinationAddresses = responseAddrs
+-					return rule.MatchAddressLimit(metadata)
+-				}
+-			}
++			responseCheck := addressLimitResponseCheck(rule, metadata)
+ 			if dnsOptions.Strategy == C.DomainStrategyAsIS {
+ 				dnsOptions.Strategy = r.defaultDomainStrategy
+ 			}
+@@ -427,6 +417,18 @@ func isAddressQuery(message *mDNS.Msg) bool {
+ 	return false
+ }
+ 
++func addressLimitResponseCheck(rule adapter.DNSRule, metadata *adapter.InboundContext) func(responseAddrs []netip.Addr) bool {
++	if rule == nil || !rule.WithAddressLimit() {
++		return nil
++	}
++	responseMetadata := *metadata
++	return func(responseAddrs []netip.Addr) bool {
++		checkMetadata := responseMetadata
++		checkMetadata.DestinationAddresses = responseAddrs
++		return rule.MatchAddressLimit(&checkMetadata)
++	}
++}
++
+ func (r *Router) ClearCache() {
+ 	r.client.ClearCache()
+ 	if r.platformInterface != nil {
+diff --git a/dns/transport/fakeip/store.go b/dns/transport/fakeip/store.go
+index 83677b0d..166f3e37 100644
+--- a/dns/transport/fakeip/store.go
++++ b/dns/transport/fakeip/store.go
+@@ -17,18 +17,43 @@ type Store struct {
+ 	logger       logger.Logger
+ 	inet4Range   netip.Prefix
+ 	inet6Range   netip.Prefix
++	inet4Last    netip.Addr
++	inet6Last    netip.Addr
+ 	storage      adapter.FakeIPStorage
+ 	inet4Current netip.Addr
+ 	inet6Current netip.Addr
+ }
+ 
+ func NewStore(ctx context.Context, logger logger.Logger, inet4Range netip.Prefix, inet6Range netip.Prefix) *Store {
+-	return &Store{
++	store := &Store{
+ 		ctx:        ctx,
+ 		logger:     logger,
+ 		inet4Range: inet4Range,
+ 		inet6Range: inet6Range,
+ 	}
++	if inet4Range.IsValid() {
++		store.inet4Last = broadcastAddress(inet4Range)
++	}
++	if inet6Range.IsValid() {
++		store.inet6Last = broadcastAddress(inet6Range)
++	}
++	return store
++}
++
++func broadcastAddress(prefix netip.Prefix) netip.Addr {
++	addr := prefix.Addr()
++	raw := addr.As16()
++	bits := prefix.Bits()
++	if addr.Is4() {
++		bits += 96
++	}
++	for i := bits; i < 128; i++ {
++		raw[i/8] |= 1 << (7 - i%8)
++	}
++	if addr.Is4() {
++		return netip.AddrFrom4([4]byte(raw[12:]))
++	}
++	return netip.AddrFrom16(raw)
+ }
+ 
+ func (s *Store) Start() error {
+@@ -46,10 +71,10 @@ func (s *Store) Start() error {
+ 		s.inet6Current = metadata.Inet6Current
+ 	} else {
+ 		if s.inet4Range.IsValid() {
+-			s.inet4Current = s.inet4Range.Addr().Next().Next()
++			s.inet4Current = s.inet4Range.Addr().Next()
+ 		}
+ 		if s.inet6Range.IsValid() {
+-			s.inet6Current = s.inet6Range.Addr().Next().Next()
++			s.inet6Current = s.inet6Range.Addr().Next()
+ 		}
+ 		_ = storage.FakeIPReset()
+ 	}
+@@ -83,7 +108,7 @@ func (s *Store) Create(domain string, isIPv6 bool) (netip.Addr, error) {
+ 			return netip.Addr{}, E.New("missing IPv4 fakeip address range")
+ 		}
+ 		nextAddress := s.inet4Current.Next()
+-		if !s.inet4Range.Contains(nextAddress) {
++		if nextAddress == s.inet4Last || !s.inet4Range.Contains(nextAddress) {
+ 			nextAddress = s.inet4Range.Addr().Next().Next()
+ 		}
+ 		s.inet4Current = nextAddress
+@@ -93,7 +118,7 @@ func (s *Store) Create(domain string, isIPv6 bool) (netip.Addr, error) {
+ 			return netip.Addr{}, E.New("missing IPv6 fakeip address range")
+ 		}
+ 		nextAddress := s.inet6Current.Next()
+-		if !s.inet6Range.Contains(nextAddress) {
++		if nextAddress == s.inet6Last || !s.inet6Range.Contains(nextAddress) {
+ 			nextAddress = s.inet6Range.Addr().Next().Next()
+ 		}
+ 		s.inet6Current = nextAddress
+diff --git a/dns/transport/local/resolv_windows.go b/dns/transport/local/resolv_windows.go
+index 76f758c6..04b8d4ef 100644
+--- a/dns/transport/local/resolv_windows.go
++++ b/dns/transport/local/resolv_windows.go
+@@ -5,6 +5,7 @@ import (
+ 	"net"
+ 	"net/netip"
+ 	"os"
++	"strconv"
+ 	"syscall"
+ 	"time"
+ 	"unsafe"
+@@ -63,6 +64,9 @@ func dnsReadConfig(ctx context.Context, _ string) *dnsConfig {
+ 					continue
+ 				}
+ 				dnsServerAddr = netip.AddrFrom16(sockaddr.Addr)
++				if sockaddr.ZoneId != 0 {
++					dnsServerAddr = dnsServerAddr.WithZone(strconv.FormatInt(int64(sockaddr.ZoneId), 10))
++				}
+ 			default:
+ 				// Unexpected type.
+ 				continue
+diff --git a/experimental/clashapi/api_meta.go b/experimental/clashapi/api_meta.go
+index 77dad797..8b31d8a4 100644
+--- a/experimental/clashapi/api_meta.go
++++ b/experimental/clashapi/api_meta.go
+@@ -2,6 +2,7 @@ package clashapi
+ 
+ import (
+ 	"bytes"
++	"context"
+ 	"net"
+ 	"net/http"
+ 	"runtime/debug"
+@@ -27,7 +28,7 @@ func (s *Server) setupMetaAPI(r chi.Router) {
+ 		})
+ 		r.Mount("/", middleware.Profiler())
+ 	}
+-	r.Get("/memory", memory(s.trafficManager))
++	r.Get("/memory", memory(s.ctx, s.trafficManager))
+ 	r.Mount("/group", groupRouter(s))
+ 	r.Mount("/upgrade", upgradeRouter(s))
+ }
+@@ -37,7 +38,7 @@ type Memory struct {
+ 	OSLimit uint64 `json:"oslimit"` // maybe we need it in the future
+ }
+ 
+-func memory(trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
++func memory(ctx context.Context, trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
+ 	return func(w http.ResponseWriter, r *http.Request) {
+ 		var conn net.Conn
+ 		if r.Header.Get("Upgrade") == "websocket" {
+@@ -46,6 +47,7 @@ func memory(trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r
+ 			if err != nil {
+ 				return
+ 			}
++			defer conn.Close()
+ 		}
+ 
+ 		if conn == nil {
+@@ -58,7 +60,12 @@ func memory(trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r
+ 		buf := &bytes.Buffer{}
+ 		var err error
+ 		first := true
+-		for range tick.C {
++		for {
++			select {
++			case <-ctx.Done():
++				return
++			case <-tick.C:
++			}
+ 			buf.Reset()
+ 
+ 			inuse := trafficManager.Snapshot().Memory
+diff --git a/experimental/clashapi/connections.go b/experimental/clashapi/connections.go
+index 999d5898..14274b31 100644
+--- a/experimental/clashapi/connections.go
++++ b/experimental/clashapi/connections.go
+@@ -2,6 +2,7 @@ package clashapi
+ 
+ import (
+ 	"bytes"
++	"context"
+ 	"net/http"
+ 	"strconv"
+ 	"time"
+@@ -17,15 +18,15 @@ import (
+ 	"github.com/gofrs/uuid/v5"
+ )
+ 
+-func connectionRouter(router adapter.Router, trafficManager *trafficontrol.Manager) http.Handler {
++func connectionRouter(ctx context.Context, router adapter.Router, trafficManager *trafficontrol.Manager) http.Handler {
+ 	r := chi.NewRouter()
+-	r.Get("/", getConnections(trafficManager))
++	r.Get("/", getConnections(ctx, trafficManager))
+ 	r.Delete("/", closeAllConnections(router, trafficManager))
+ 	r.Delete("/{id}", closeConnection(trafficManager))
+ 	return r
+ }
+ 
+-func getConnections(trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
++func getConnections(ctx context.Context, trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
+ 	return func(w http.ResponseWriter, r *http.Request) {
+ 		if r.Header.Get("Upgrade") != "websocket" {
+ 			snapshot := trafficManager.Snapshot()
+@@ -37,6 +38,7 @@ func getConnections(trafficManager *trafficontrol.Manager) func(w http.ResponseW
+ 		if err != nil {
+ 			return
+ 		}
++		defer conn.Close()
+ 
+ 		intervalStr := r.URL.Query().Get("interval")
+ 		interval := 1000
+@@ -67,7 +69,12 @@ func getConnections(trafficManager *trafficontrol.Manager) func(w http.ResponseW
+ 
+ 		tick := time.NewTicker(time.Millisecond * time.Duration(interval))
+ 		defer tick.Stop()
+-		for range tick.C {
++		for {
++			select {
++			case <-ctx.Done():
++				return
++			case <-tick.C:
++			}
+ 			if err = sendSnapshot(); err != nil {
+ 				break
+ 			}
+diff --git a/experimental/clashapi/server.go b/experimental/clashapi/server.go
+index 3a2d4827..33094d34 100644
+--- a/experimental/clashapi/server.go
++++ b/experimental/clashapi/server.go
+@@ -114,13 +114,13 @@ func NewServer(ctx context.Context, logFactory log.ObservableFactory, options op
+ 	chiRouter.Group(func(r chi.Router) {
+ 		r.Use(authentication(options.Secret))
+ 		r.Get("/", hello(options.ExternalUI != ""))
+-		r.Get("/logs", getLogs(logFactory))
+-		r.Get("/traffic", traffic(trafficManager))
++		r.Get("/logs", getLogs(s.ctx, logFactory))
++		r.Get("/traffic", traffic(s.ctx, trafficManager))
+ 		r.Get("/version", version)
+ 		r.Mount("/configs", configRouter(s, logFactory))
+ 		r.Mount("/proxies", proxyRouter(s, s.router))
+ 		r.Mount("/rules", ruleRouter(s.router))
+-		r.Mount("/connections", connectionRouter(s.router, trafficManager))
++		r.Mount("/connections", connectionRouter(s.ctx, s.router, trafficManager))
+ 		r.Mount("/providers/proxies", proxyProviderRouter())
+ 		r.Mount("/providers/rules", ruleProviderRouter())
+ 		r.Mount("/script", scriptRouter())
+@@ -305,7 +305,7 @@ type Traffic struct {
+ 	Down int64 `json:"down"`
+ }
+ 
+-func traffic(trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
++func traffic(ctx context.Context, trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
+ 	return func(w http.ResponseWriter, r *http.Request) {
+ 		var conn net.Conn
+ 		if r.Header.Get("Upgrade") == "websocket" {
+@@ -326,7 +326,12 @@ func traffic(trafficManager *trafficontrol.Manager) func(w http.ResponseWriter,
+ 		defer tick.Stop()
+ 		buf := &bytes.Buffer{}
+ 		uploadTotal, downloadTotal := trafficManager.Total()
+-		for range tick.C {
++		for {
++			select {
++			case <-ctx.Done():
++				return
++			case <-tick.C:
++			}
+ 			buf.Reset()
+ 			uploadTotalNew, downloadTotalNew := trafficManager.Total()
+ 			err := json.NewEncoder(buf).Encode(Traffic{
+@@ -357,7 +362,7 @@ type Log struct {
+ 	Payload string `json:"payload"`
+ }
+ 
+-func getLogs(logFactory log.ObservableFactory) func(w http.ResponseWriter, r *http.Request) {
++func getLogs(ctx context.Context, logFactory log.ObservableFactory) func(w http.ResponseWriter, r *http.Request) {
+ 	return func(w http.ResponseWriter, r *http.Request) {
+ 		levelText := r.URL.Query().Get("level")
+ 		if levelText == "" {
+@@ -396,6 +401,8 @@ func getLogs(logFactory log.ObservableFactory) func(w http.ResponseWriter, r *ht
+ 		var logEntry log.Entry
+ 		for {
+ 			select {
++			case <-ctx.Done():
++				return
+ 			case <-done:
+ 				return
+ 			case logEntry = <-subscription:
+diff --git a/go.mod b/go.mod
+index 92befc9a..017143f2 100644
+--- a/go.mod
++++ b/go.mod
+@@ -29,11 +29,11 @@ require (
+ 	github.com/sagernet/quic-go v0.52.0-sing-box-mod.3
+ 	github.com/sagernet/sing v0.7.18
+ 	github.com/sagernet/sing-mux v0.3.4
+-	github.com/sagernet/sing-quic v0.5.2
++	github.com/sagernet/sing-quic v0.5.3
+ 	github.com/sagernet/sing-shadowsocks v0.2.8
+ 	github.com/sagernet/sing-shadowsocks2 v0.2.1
+ 	github.com/sagernet/sing-shadowtls v0.2.1-0.20250503051639-fcd445d33c11
+-	github.com/sagernet/sing-tun v0.7.10
++	github.com/sagernet/sing-tun v0.7.13
+ 	github.com/sagernet/sing-vmess v0.2.7
+ 	github.com/sagernet/smux v1.5.50-sing-box-mod.1
+ 	github.com/sagernet/tailscale v1.80.3-sing-box-1.12-mod.2
+diff --git a/go.sum b/go.sum
+index 2cc4a010..88fb06f3 100644
+--- a/go.sum
++++ b/go.sum
+@@ -169,16 +169,16 @@ github.com/sagernet/sing v0.7.18 h1:iZHkaru1/MoHugx3G+9S3WG4owMewKO/KvieE2Pzk4E=
+ github.com/sagernet/sing v0.7.18/go.mod h1:ARkL0gM13/Iv5VCZmci/NuoOlePoIsW0m7BWfln/Hak=
+ github.com/sagernet/sing-mux v0.3.4 h1:ZQplKl8MNXutjzbMVtWvWG31fohhgOfCuUZR4dVQ8+s=
+ github.com/sagernet/sing-mux v0.3.4/go.mod h1:QvlKMyNBNrQoyX4x+gq028uPbLM2XeRpWtDsWBJbFSk=
+-github.com/sagernet/sing-quic v0.5.2 h1:I3vlfRImhr0uLwRS3b3ib70RMG9FcXtOKKUDz3eKRWc=
+-github.com/sagernet/sing-quic v0.5.2/go.mod h1:evP1e++ZG8TJHVV5HudXV4vWeYzGfCdF4HwSJZcdqkI=
++github.com/sagernet/sing-quic v0.5.3 h1:K937DKJN98xqyztijRkLJqbBfyV4rEZcYxFyP3EBikU=
++github.com/sagernet/sing-quic v0.5.3/go.mod h1:evP1e++ZG8TJHVV5HudXV4vWeYzGfCdF4HwSJZcdqkI=
+ github.com/sagernet/sing-shadowsocks v0.2.8 h1:PURj5PRoAkqeHh2ZW205RWzN9E9RtKCVCzByXruQWfE=
+ github.com/sagernet/sing-shadowsocks v0.2.8/go.mod h1:lo7TWEMDcN5/h5B8S0ew+r78ZODn6SwVaFhvB6H+PTI=
+ github.com/sagernet/sing-shadowsocks2 v0.2.1 h1:dWV9OXCeFPuYGHb6IRqlSptVnSzOelnqqs2gQ2/Qioo=
+ github.com/sagernet/sing-shadowsocks2 v0.2.1/go.mod h1:RnXS0lExcDAovvDeniJ4IKa2IuChrdipolPYWBv9hWQ=
+ github.com/sagernet/sing-shadowtls v0.2.1-0.20250503051639-fcd445d33c11 h1:tK+75l64tm9WvEFrYRE1t0YxoFdWQqw/h7Uhzj0vJ+w=
+ github.com/sagernet/sing-shadowtls v0.2.1-0.20250503051639-fcd445d33c11/go.mod h1:sWqKnGlMipCHaGsw1sTTlimyUpgzP4WP3pjhCsYt9oA=
+-github.com/sagernet/sing-tun v0.7.10 h1:lLBaS9uL0mK/FCGDe3N4oKQxjMGfmv3u2/6jKtmq4Pw=
+-github.com/sagernet/sing-tun v0.7.10/go.mod h1:pUEjh9YHQ2gJT6Lk0TYDklh3WJy7lz+848vleGM3JPM=
++github.com/sagernet/sing-tun v0.7.13 h1:GuUBCymnGV/2jyxPae3eM9HlX1d7FaNxM97EqktDfy0=
++github.com/sagernet/sing-tun v0.7.13/go.mod h1:pUEjh9YHQ2gJT6Lk0TYDklh3WJy7lz+848vleGM3JPM=
+ github.com/sagernet/sing-vmess v0.2.7 h1:2ee+9kO0xW5P4mfe6TYVWf9VtY8k1JhNysBqsiYj0sk=
+ github.com/sagernet/sing-vmess v0.2.7/go.mod h1:5aYoOtYksAyS0NXDm0qKeTYW1yoE1bJVcv+XLcVoyJs=
+ github.com/sagernet/smux v1.5.50-sing-box-mod.1 h1:XkJcivBC9V4wBjiGXIXZ229aZCU1hzcbp6kSkkyQ478=
+diff --git a/protocol/naive/inbound_conn.go b/protocol/naive/inbound_conn.go
+index 1dbb2bd8..0711b637 100644
+--- a/protocol/naive/inbound_conn.go
++++ b/protocol/naive/inbound_conn.go
+@@ -95,6 +95,7 @@ func (p *paddingConn) writeWithPadding(writer io.Writer, data []byte) (n int, er
+ 		binary.BigEndian.PutUint16(header, uint16(len(data)))
+ 		header[2] = byte(paddingSize)
+ 		common.Must1(buffer.Write(data))
++		buffer.Extend(paddingSize)
+ 		_, err = writer.Write(buffer.Bytes())
+ 		if err == nil {
+ 			n = len(data)
+diff --git a/protocol/tailscale/endpoint.go b/protocol/tailscale/endpoint.go
+index c2558836..41bde8f5 100644
+--- a/protocol/tailscale/endpoint.go
++++ b/protocol/tailscale/endpoint.go
+@@ -52,6 +52,8 @@ import (
+ 	"github.com/sagernet/tailscale/wgengine/filter"
+ )
+ 
++var _ dialer.PacketDialerWithDestination = (*Endpoint)(nil)
++
+ func init() {
+ 	version.SetVersion("sing-box " + C.Version)
+ }
+@@ -386,19 +388,7 @@ func (t *Endpoint) DialContext(ctx context.Context, network string, destination
+ 	}
+ }
+ 
+-func (t *Endpoint) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+-	t.logger.InfoContext(ctx, "outbound packet connection to ", destination)
+-	if destination.IsFqdn() {
+-		destinationAddresses, err := t.dnsRouter.Lookup(ctx, destination.Fqdn, adapter.DNSQueryOptions{})
+-		if err != nil {
+-			return nil, err
+-		}
+-		packetConn, _, err := N.ListenSerial(ctx, t, destination, destinationAddresses)
+-		if err != nil {
+-			return nil, err
+-		}
+-		return packetConn, err
+-	}
++func (t *Endpoint) listenPacketWithAddress(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+ 	addr4, addr6 := t.server.TailscaleIPs()
+ 	bind := tcpip.FullAddress{
+ 		NIC: 1,
+@@ -424,6 +414,44 @@ func (t *Endpoint) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
+ 	return udpConn, nil
+ }
+ 
++func (t *Endpoint) ListenPacketWithDestination(ctx context.Context, destination M.Socksaddr) (net.PacketConn, netip.Addr, error) {
++	t.logger.InfoContext(ctx, "outbound packet connection to ", destination)
++	if destination.IsFqdn() {
++		destinationAddresses, err := t.dnsRouter.Lookup(ctx, destination.Fqdn, adapter.DNSQueryOptions{})
++		if err != nil {
++			return nil, netip.Addr{}, err
++		}
++		var errors []error
++		for _, address := range destinationAddresses {
++			packetConn, packetErr := t.listenPacketWithAddress(ctx, M.SocksaddrFrom(address, destination.Port))
++			if packetErr == nil {
++				return packetConn, address, nil
++			}
++			errors = append(errors, packetErr)
++		}
++		return nil, netip.Addr{}, E.Errors(errors...)
++	}
++	packetConn, err := t.listenPacketWithAddress(ctx, destination)
++	if err != nil {
++		return nil, netip.Addr{}, err
++	}
++	if destination.IsIP() {
++		return packetConn, destination.Addr, nil
++	}
++	return packetConn, netip.Addr{}, nil
++}
++
++func (t *Endpoint) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
++	packetConn, destinationAddress, err := t.ListenPacketWithDestination(ctx, destination)
++	if err != nil {
++		return nil, err
++	}
++	if destinationAddress.IsValid() && destination != M.SocksaddrFrom(destinationAddress, destination.Port) {
++		return bufio.NewNATPacketConn(bufio.NewPacketConn(packetConn), M.SocksaddrFrom(destinationAddress, destination.Port), destination), nil
++	}
++	return packetConn, nil
++}
++
+ func (t *Endpoint) PrepareConnection(network string, source M.Socksaddr, destination M.Socksaddr) error {
+ 	tsFilter := t.filter.Load()
+ 	if tsFilter != nil {
+diff --git a/protocol/tun/inbound.go b/protocol/tun/inbound.go
+index a8fa8e49..b0d971a2 100644
+--- a/protocol/tun/inbound.go
++++ b/protocol/tun/inbound.go
+@@ -324,7 +324,6 @@ func (t *Inbound) Start(stage adapter.StartStage) error {
+ 			t.tunOptions.Name = tun.CalculateInterfaceName("")
+ 		}
+ 		if t.platformInterface == nil {
+-			t.routeAddressSet = common.FlatMap(t.routeRuleSet, adapter.RuleSet.ExtractIPSet)
+ 			for _, routeRuleSet := range t.routeRuleSet {
+ 				ipSets := routeRuleSet.ExtractIPSet()
+ 				if len(ipSets) == 0 {
+@@ -336,7 +335,6 @@ func (t *Inbound) Start(stage adapter.StartStage) error {
+ 					t.routeRuleSetCallback = append(t.routeRuleSetCallback, routeRuleSet.RegisterCallback(t.updateRouteAddressSet))
+ 				}
+ 			}
+-			t.routeExcludeAddressSet = common.FlatMap(t.routeExcludeRuleSet, adapter.RuleSet.ExtractIPSet)
+ 			for _, routeExcludeRuleSet := range t.routeExcludeRuleSet {
+ 				ipSets := routeExcludeRuleSet.ExtractIPSet()
+ 				if len(ipSets) == 0 {
+diff --git a/protocol/wireguard/endpoint.go b/protocol/wireguard/endpoint.go
+index 4165d126..7ec3d428 100644
+--- a/protocol/wireguard/endpoint.go
++++ b/protocol/wireguard/endpoint.go
+@@ -22,6 +22,8 @@ import (
+ 	"github.com/sagernet/sing/service"
+ )
+ 
++var _ dialer.PacketDialerWithDestination = (*Endpoint)(nil)
++
+ func RegisterEndpoint(registry *endpoint.Registry) {
+ 	endpoint.Register[option.WireGuardEndpointOptions](registry, C.TypeWireGuard, NewEndpoint)
+ }
+@@ -195,18 +197,32 @@ func (w *Endpoint) DialContext(ctx context.Context, network string, destination
+ 	return w.endpoint.DialContext(ctx, network, destination)
+ }
+ 
+-func (w *Endpoint) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
++func (w *Endpoint) ListenPacketWithDestination(ctx context.Context, destination M.Socksaddr) (net.PacketConn, netip.Addr, error) {
+ 	w.logger.InfoContext(ctx, "outbound packet connection to ", destination)
+ 	if destination.IsFqdn() {
+ 		destinationAddresses, err := w.dnsRouter.Lookup(ctx, destination.Fqdn, adapter.DNSQueryOptions{})
+ 		if err != nil {
+-			return nil, err
+-		}
+-		packetConn, _, err := N.ListenSerial(ctx, w.endpoint, destination, destinationAddresses)
+-		if err != nil {
+-			return nil, err
++			return nil, netip.Addr{}, err
+ 		}
+-		return packetConn, err
++		return N.ListenSerial(ctx, w.endpoint, destination, destinationAddresses)
++	}
++	packetConn, err := w.endpoint.ListenPacket(ctx, destination)
++	if err != nil {
++		return nil, netip.Addr{}, err
++	}
++	if destination.IsIP() {
++		return packetConn, destination.Addr, nil
++	}
++	return packetConn, netip.Addr{}, nil
++}
++
++func (w *Endpoint) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
++	packetConn, destinationAddress, err := w.ListenPacketWithDestination(ctx, destination)
++	if err != nil {
++		return nil, err
++	}
++	if destinationAddress.IsValid() && destination != M.SocksaddrFrom(destinationAddress, destination.Port) {
++		return bufio.NewNATPacketConn(bufio.NewPacketConn(packetConn), M.SocksaddrFrom(destinationAddress, destination.Port), destination), nil
+ 	}
+-	return w.endpoint.ListenPacket(ctx, destination)
++	return packetConn, nil
+ }
+diff --git a/route/conn.go b/route/conn.go
+index 3d2b8f05..3a9fb65f 100644
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -155,6 +155,8 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 	} else {
+ 		if len(metadata.DestinationAddresses) > 0 {
+ 			remotePacketConn, destinationAddress, err = dialer.ListenSerialNetworkPacket(ctx, this, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
++		} else if packetDialer, withDestination := this.(dialer.PacketDialerWithDestination); withDestination {
++			remotePacketConn, destinationAddress, err = packetDialer.ListenPacketWithDestination(ctx, metadata.Destination)
+ 		} else {
+ 			remotePacketConn, err = this.ListenPacket(ctx, metadata.Destination)
+ 		}
+@@ -185,11 +187,16 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 		}
+ 		if natConn, loaded := common.Cast[bufio.NATPacketConn](conn); loaded {
+ 			natConn.UpdateDestination(destinationAddress)
+-		} else if metadata.Destination != M.SocksaddrFrom(destinationAddress, metadata.Destination.Port) {
+-			if metadata.UDPDisableDomainUnmapping {
+-				remotePacketConn = bufio.NewUnidirectionalNATPacketConn(bufio.NewPacketConn(remotePacketConn), M.SocksaddrFrom(destinationAddress, metadata.Destination.Port), originDestination)
+-			} else {
+-				remotePacketConn = bufio.NewNATPacketConn(bufio.NewPacketConn(remotePacketConn), M.SocksaddrFrom(destinationAddress, metadata.Destination.Port), originDestination)
++		} else {
++			destination := M.SocksaddrFrom(destinationAddress, metadata.Destination.Port)
++			if metadata.Destination != destination {
++				if metadata.UDPDisableDomainUnmapping {
++					remotePacketConn = bufio.NewUnidirectionalNATPacketConn(bufio.NewPacketConn(remotePacketConn), destination, originDestination)
++				} else {
++					remotePacketConn = bufio.NewNATPacketConn(bufio.NewPacketConn(remotePacketConn), destination, originDestination)
++				}
++			} else if metadata.RouteOriginalDestination.IsValid() && metadata.RouteOriginalDestination != metadata.Destination {
++				remotePacketConn = bufio.NewDestinationNATPacketConn(bufio.NewPacketConn(remotePacketConn), metadata.Destination, metadata.RouteOriginalDestination)
+ 			}
+ 		}
+ 	} else if metadata.RouteOriginalDestination.IsValid() && metadata.RouteOriginalDestination != metadata.Destination {
+diff --git a/route/rule/rule_abstract.go b/route/rule/rule_abstract.go
+index 5be215e0..45d5b893 100644
+--- a/route/rule/rule_abstract.go
++++ b/route/rule/rule_abstract.go
+@@ -107,9 +107,7 @@ func (r *abstractDefaultRule) Match(metadata *adapter.InboundContext) bool {
+ 	}
+ 
+ 	for _, item := range r.items {
+-		if _, isRuleSet := item.(*RuleSetItem); !isRuleSet {
+-			metadata.DidMatch = true
+-		}
++		metadata.DidMatch = true
+ 		if !item.Match(metadata) {
+ 			return r.invert
+ 		}
+diff --git a/route/rule/rule_abstract_test.go b/route/rule/rule_abstract_test.go
+new file mode 100644
+index 00000000..2d2e8ba8
+--- /dev/null
++++ b/route/rule/rule_abstract_test.go
+@@ -0,0 +1,157 @@
++package rule
++
++import (
++	"context"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing/common/x/list"
++
++	"github.com/stretchr/testify/require"
++	"go4.org/netipx"
++)
++
++type fakeRuleSet struct {
++	matched bool
++}
++
++func (f *fakeRuleSet) Name() string {
++	return "fake-rule-set"
++}
++
++func (f *fakeRuleSet) StartContext(context.Context, *adapter.HTTPStartContext) error {
++	return nil
++}
++
++func (f *fakeRuleSet) PostStart() error {
++	return nil
++}
++
++func (f *fakeRuleSet) Metadata() adapter.RuleSetMetadata {
++	return adapter.RuleSetMetadata{}
++}
++
++func (f *fakeRuleSet) ExtractIPSet() []*netipx.IPSet {
++	return nil
++}
++
++func (f *fakeRuleSet) IncRef() {}
++
++func (f *fakeRuleSet) DecRef() {}
++
++func (f *fakeRuleSet) Cleanup() {}
++
++func (f *fakeRuleSet) RegisterCallback(adapter.RuleSetUpdateCallback) *list.Element[adapter.RuleSetUpdateCallback] {
++	return nil
++}
++
++func (f *fakeRuleSet) UnregisterCallback(*list.Element[adapter.RuleSetUpdateCallback]) {}
++
++func (f *fakeRuleSet) Close() error {
++	return nil
++}
++
++func (f *fakeRuleSet) Match(*adapter.InboundContext) bool {
++	return f.matched
++}
++
++func (f *fakeRuleSet) String() string {
++	return "fake-rule-set"
++}
++
++type fakeRuleItem struct {
++	matched bool
++}
++
++func (f *fakeRuleItem) Match(*adapter.InboundContext) bool {
++	return f.matched
++}
++
++func (f *fakeRuleItem) String() string {
++	return "fake-rule-item"
++}
++
++func newRuleSetOnlyRule(ruleSetMatched bool, invert bool) *DefaultRule {
++	ruleSetItem := &RuleSetItem{
++		setList: []adapter.RuleSet{&fakeRuleSet{matched: ruleSetMatched}},
++	}
++	return &DefaultRule{
++		abstractDefaultRule: abstractDefaultRule{
++			items:    []RuleItem{ruleSetItem},
++			allItems: []RuleItem{ruleSetItem},
++			invert:   invert,
++		},
++	}
++}
++
++func newSingleItemRule(matched bool) *DefaultRule {
++	item := &fakeRuleItem{matched: matched}
++	return &DefaultRule{
++		abstractDefaultRule: abstractDefaultRule{
++			items:    []RuleItem{item},
++			allItems: []RuleItem{item},
++		},
++	}
++}
++
++func TestAbstractDefaultRule_RuleSetOnly_InvertFalse(t *testing.T) {
++	t.Parallel()
++	require.True(t, newRuleSetOnlyRule(true, false).Match(&adapter.InboundContext{}))
++	require.False(t, newRuleSetOnlyRule(false, false).Match(&adapter.InboundContext{}))
++}
++
++func TestAbstractDefaultRule_RuleSetOnly_InvertTrue(t *testing.T) {
++	t.Parallel()
++	require.False(t, newRuleSetOnlyRule(true, true).Match(&adapter.InboundContext{}))
++	require.True(t, newRuleSetOnlyRule(false, true).Match(&adapter.InboundContext{}))
++}
++
++func TestAbstractLogicalRule_And_WithRuleSetInvert(t *testing.T) {
++	t.Parallel()
++	testCases := []struct {
++		name          string
++		aMatched      bool
++		ruleSetBMatch bool
++		expected      bool
++	}{
++		{
++			name:          "A true B true",
++			aMatched:      true,
++			ruleSetBMatch: true,
++			expected:      false,
++		},
++		{
++			name:          "A true B false",
++			aMatched:      true,
++			ruleSetBMatch: false,
++			expected:      true,
++		},
++		{
++			name:          "A false B true",
++			aMatched:      false,
++			ruleSetBMatch: true,
++			expected:      false,
++		},
++		{
++			name:          "A false B false",
++			aMatched:      false,
++			ruleSetBMatch: false,
++			expected:      false,
++		},
++	}
++	for _, testCase := range testCases {
++		testCase := testCase
++		t.Run(testCase.name, func(t *testing.T) {
++			t.Parallel()
++			logicalRule := &abstractLogicalRule{
++				mode: C.LogicalTypeAnd,
++				rules: []adapter.HeadlessRule{
++					newSingleItemRule(testCase.aMatched),
++					newRuleSetOnlyRule(testCase.ruleSetBMatch, true),
++				},
++			}
++			require.Equal(t, testCase.expected, logicalRule.Match(&adapter.InboundContext{}))
++		})
++	}
++}
+diff --git a/transport/wireguard/device_system.go b/transport/wireguard/device_system.go
+index fa54f332..d2a4098c 100644
+--- a/transport/wireguard/device_system.go
++++ b/transport/wireguard/device_system.go
+@@ -88,7 +88,7 @@ func (w *systemDevice) Start() error {
+ 	w.options.Logger.Info("started at ", w.options.Name)
+ 	w.device = tunInterface
+ 	batchTUN, isBatchTUN := tunInterface.(tun.LinuxTUN)
+-	if isBatchTUN {
++	if isBatchTUN && batchTUN.BatchSize() > 1 {
+ 		w.batchDevice = batchTUN
+ 	}
+ 	w.events <- wgTun.EventUp
