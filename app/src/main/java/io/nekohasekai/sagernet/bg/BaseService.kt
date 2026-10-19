@@ -82,9 +82,9 @@ class BaseService {
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         if (SagerNet.power.isDeviceIdleMode) {
-                            proxy?.box?.sleep()
+                            proxy?.takeIf { it.isInitialized() }?.box?.sleep()
                         } else {
-                            proxy?.box?.wake()
+                            proxy?.takeIf { it.isInitialized() }?.box?.wake()
                             if (DataStore.wakeResetConnections) {
                                 resetConnections("Device wake from idle", false)
                             }

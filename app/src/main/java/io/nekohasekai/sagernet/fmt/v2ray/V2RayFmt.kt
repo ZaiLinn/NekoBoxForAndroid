@@ -664,7 +664,9 @@ fun buildSingBoxOutboundStandardV2RayBean(bean: StandardV2RayBean): Outbound {
                     flow = bean.encryption
                 }
                 when (bean.packetEncoding) {
-                    0 -> packet_encoding = ""
+                    // Both Xray and sing-box servers reject plain VLESS UDP with the vision flow,
+                    // so every UDP connection (QUIC, games, ...) would fail; use xudp instead
+                    0 -> packet_encoding = if (flow == "xtls-rprx-vision") "xudp" else ""
                     1 -> packet_encoding = "packetaddr"
                     2 -> packet_encoding = "xudp"
                 }
