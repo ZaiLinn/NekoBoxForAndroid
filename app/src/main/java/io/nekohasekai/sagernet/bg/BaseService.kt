@@ -131,11 +131,16 @@ class BaseService {
         val binder = Binder(this)
         var connectingJob: Job? = null
 
+        // start again when the running stop finishes: set by a restart, or by a start request
+        // that came in while stopping; a plain stop request clears it
+        var restartAfterStop = false
+
         fun changeState(s: State, msg: String? = null) {
             if (state == s && msg == null) return
             state = s
             DataStore.serviceState = s
             binder.stateChanged(s, msg)
+            TileService.requestUpdate(service as Context)
         }
     }
 
@@ -192,14 +197,11 @@ class BaseService {
             callbacks.unregister(cb)
         }
 
+        // binder thread: the service may stop meanwhile, so read the instance once
         override fun urlTest(): Int {
-            if (data?.proxy?.box == null) {
-                error("core not started")
-            }
+            val box = data?.proxy?.takeIf { it.isInitialized() }?.box ?: error("core not started")
             try {
-                return Libcore.urlTest(
-                    data!!.proxy!!.box, DataStore.connectionTestURL, 3000
-                )
+                return Libcore.urlTest(box, DataStore.connectionTestURL, 3000)
             } catch (e: Exception) {
                 error(Protocols.genFriendlyMsg(e.readableMessage))
             }
@@ -255,7 +257,9 @@ class BaseService {
         }
 
         fun canReloadSelector(): Boolean {
-            if ((data.proxy?.config?.selectorGroupId ?: -1L) < 0) return false
+            // while connecting the config is not built yet (lateinit), and there is no box
+            val proxy = data.proxy?.takeIf { it.isInitialized() } ?: return false
+            if (proxy.config.selectorGroupId < 0) return false
             val ent = SagerDatabase.proxyDao.getById(DataStore.selectedProxy) ?: return false
             val tmpBox = ProxyInstance(ent)
             tmpBox.buildConfigTmp()
@@ -294,7 +298,12 @@ class BaseService {
             DataStore.baseService = null
             DataStore.vpnService = null
 
-            if (data.state == State.Stopping) return
+            if (data.state == State.Stopping) {
+                // the latest request decides whether the running stop starts again
+                data.restartAfterStop = restart
+                return
+            }
+            data.restartAfterStop = restart
             data.notification?.destroy()
             data.notification = null
             this as Service
@@ -317,7 +326,10 @@ class BaseService {
                 // change the state
                 data.changeState(State.Stopped, msg)
                 // stop the service if nothing has bound to it
-                if (restart) startRunner() else {
+                if (data.restartAfterStop) {
+                    data.restartAfterStop = false
+                    startRunner()
+                } else {
                     stopSelf()
                 }
             }
@@ -404,6 +416,12 @@ class BaseService {
             DataStore.baseService = this
 
             val data = data
+            if (data.state == State.Stopping) {
+                // Not in the foreground any more, and a start from startForegroundService must
+                // reach startForeground: start again once stopped, which creates the notification.
+                data.restartAfterStop = true
+                return Service.START_NOT_STICKY
+            }
             if (data.state != State.Stopped) return Service.START_NOT_STICKY
             val profile = SagerDatabase.proxyDao.getById(DataStore.selectedProxy)
             this as Context
@@ -460,7 +478,9 @@ class BaseService {
 
                     proxy.processes = GuardedProcessPool {
                         Logs.w(it)
-                        stopRunner(false, it.readableMessage)
+                        // posted to the main thread: by then this run may be stopped and a new one
+                        // started, which a late failure of an old plugin must not stop
+                        if (data.proxy === proxy) stopRunner(false, it.readableMessage)
                     }
 
                     startProcesses()

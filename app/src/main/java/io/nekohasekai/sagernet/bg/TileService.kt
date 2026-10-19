@@ -1,16 +1,37 @@
 package io.nekohasekai.sagernet.bg
 
+import android.content.ComponentName
+import android.content.Context
 import android.graphics.drawable.Icon
+import android.os.Build
 import android.service.quicksettings.Tile
 import androidx.annotation.RequiresApi
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.aidl.ISagerNetService
 import io.nekohasekai.sagernet.database.SagerDatabase
+import io.nekohasekai.sagernet.ktx.Logs
 import android.service.quicksettings.TileService as BaseTileService
 
 @RequiresApi(24)
 class TileService : BaseTileService(), SagerConnection.Callback {
+
+    companion object {
+        /**
+         * The tile only learns the service state while the panel is open. Ask the system to
+         * bind it now, so a state change (or a process that died) is shown even when it is
+         * closed; some ROMs barely call onStartListening on their own.
+         */
+        fun requestUpdate(context: Context) {
+            if (Build.VERSION.SDK_INT < 24) return
+            try {
+                requestListeningState(context, ComponentName(context, TileService::class.java))
+            } catch (e: Exception) { // throws if the tile was never added on some versions
+                Logs.w(e)
+            }
+        }
+    }
+
     private val iconIdle by lazy { Icon.createWithResource(this, R.drawable.ic_service_idle) }
     private val iconBusy by lazy { Icon.createWithResource(this, R.drawable.ic_service_busy) }
     private val iconConnected by lazy {

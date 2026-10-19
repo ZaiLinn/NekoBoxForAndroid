@@ -118,7 +118,9 @@ class ConfigEditActivity : ThemedActivity() {
         }
         extendedKeyboard.setHasFixedSize(true)
         extendedKeyboard.submitList("{},:_\"".map { it.toString() })
-        extendedKeyboard.setBackgroundColor(getColorAttr(R.attr.primaryOrTextPrimary))
+        // colorPrimary, not primaryOrTextPrimary: the keys are white, and in the black themes
+        // primaryOrTextPrimary is the text color, white in night mode
+        extendedKeyboard.setBackgroundColor(getColorAttr(R.attr.colorPrimary))
 
         val keyboardContainer = findViewById<LinearLayout>(R.id.keyboard_container)
         ViewCompat.setOnApplyWindowInsetsListener(keyboardContainer) { v, windowInsets ->

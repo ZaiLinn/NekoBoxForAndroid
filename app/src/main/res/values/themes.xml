@@ -5,12 +5,12 @@
         <item name="actionModeCloseDrawable">@drawable/ic_navigation_close</item>
         <item name="colorButtonNormal">?colorAccent</item>
         <item name="android:navigationBarColor">?colorPrimaryDark</item>
-        <item name="colorPrimary">@color/material_pink_500</item>
-        <item name="colorPrimaryDark">@color/material_pink_700</item>
-        <item name="colorAccent">@color/material_pink_accent_200</item>
+        <item name="colorPrimary">@color/theme_mist_primary</item>
+        <item name="colorPrimaryDark">@color/theme_mist_primary</item>
+        <item name="colorAccent">@color/theme_mist_accent</item>
 
-        <item name="colorMaterial100">@color/material_pink_100</item>
-        <item name="colorMaterial300">@color/material_pink_300</item>
+        <item name="colorMaterial100">@color/theme_mist_tint</item>
+        <item name="colorMaterial300">@color/theme_mist_primary</item>
 
         <item name="accentOrTextSecondary">?colorAccent</item>
         <item name="accentOrTextPrimary">?colorAccent</item>
@@ -53,12 +53,12 @@
         <item name="actionModeCloseDrawable">@drawable/ic_navigation_close</item>
         <item name="colorButtonNormal">?colorAccent</item>
         <item name="android:navigationBarColor">?colorPrimaryDark</item>
-        <item name="colorPrimary">@color/material_pink_500</item>
-        <item name="colorPrimaryDark">@color/material_pink_700</item>
-        <item name="colorAccent">@color/material_pink_accent_200</item>
+        <item name="colorPrimary">@color/theme_mist_primary</item>
+        <item name="colorPrimaryDark">@color/theme_mist_primary</item>
+        <item name="colorAccent">@color/theme_mist_accent</item>
 
-        <item name="colorMaterial100">@color/material_pink_100</item>
-        <item name="colorMaterial300">@color/material_pink_300</item>
+        <item name="colorMaterial100">@color/theme_mist_tint</item>
+        <item name="colorMaterial300">@color/theme_mist_primary</item>
 
         <item name="accentOrTextSecondary">?colorAccent</item>
         <item name="accentOrTextPrimary">?colorAccent</item>
@@ -132,343 +132,281 @@
         <item name="rippleColor">@color/chip_ripple_color</item>
     </style>
 
-    <style name="Theme.SagerNet.Pink_SSR">
-        <item name="colorPrimary">@color/color_pink_ssr</item>
-        <item name="colorPrimaryDark">@color/color_pink_ssr</item>
-        <item name="colorAccent">@color/material_pink_accent_200</item>
-        <item name="colorMaterial100">@color/material_pink_accent_100</item>
-        <item name="colorMaterial300">@color/color_pink_ssr</item>
+    <!-- Low saturation (Morandi) palettes; the accent is lighter in night mode, see colors.xml.
+         Bars, FAB and bottom bar use the dark primary with white content. -->
+    <style name="Theme.SagerNet.Graphite">
+        <item name="colorPrimary">@color/theme_graphite_primary</item>
+        <item name="colorPrimaryDark">@color/theme_graphite_primary</item>
+        <item name="colorAccent">@color/theme_graphite_accent</item>
+        <item name="colorSecondary">@color/theme_graphite_accent</item>
+        <item name="colorMaterial100">@color/theme_graphite_tint</item>
+        <item name="colorMaterial300">@color/theme_graphite_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_graphite_accent</item>
+        <item name="fabColorBackground">@color/theme_graphite_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_graphite_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_graphite_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_graphite_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_graphite_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.Amber">
-        <item name="colorPrimary">@color/material_amber_500</item>
-        <item name="colorPrimaryDark">@color/material_amber_700</item>
-        <item name="colorAccent">@color/material_amber_accent_200</item>
-        <item name="colorMaterial100">@color/material_amber_100</item>
-        <item name="colorMaterial300">@color/material_amber_300</item>
+    <style name="Theme.SagerNet.Dialog.Graphite">
+        <item name="colorPrimary">@color/theme_graphite_primary</item>
+        <item name="colorPrimaryDark">@color/theme_graphite_primary</item>
+        <item name="colorAccent">@color/theme_graphite_accent</item>
+        <item name="colorSecondary">@color/theme_graphite_accent</item>
+        <item name="colorMaterial100">@color/theme_graphite_tint</item>
+        <item name="colorMaterial300">@color/theme_graphite_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_graphite_accent</item>
+        <item name="fabColorBackground">@color/theme_graphite_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_graphite_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_graphite_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_graphite_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_graphite_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.Blue">
-        <item name="colorPrimary">@color/material_blue_500</item>
-        <item name="colorPrimaryDark">@color/material_blue_700</item>
-        <item name="colorAccent">@color/material_blue_accent_200</item>
-        <item name="colorMaterial100">@color/material_blue_100</item>
-        <item name="colorMaterial300">@color/material_blue_300</item>
+    <style name="Theme.SagerNet.MistBlue">
+        <item name="colorPrimary">@color/theme_mist_primary</item>
+        <item name="colorPrimaryDark">@color/theme_mist_primary</item>
+        <item name="colorAccent">@color/theme_mist_accent</item>
+        <item name="colorSecondary">@color/theme_mist_accent</item>
+        <item name="colorMaterial100">@color/theme_mist_tint</item>
+        <item name="colorMaterial300">@color/theme_mist_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_mist_accent</item>
+        <item name="fabColorBackground">@color/theme_mist_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_mist_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_mist_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_mist_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_mist_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.BlueGrey">
-        <item name="colorPrimary">@color/material_blue_grey_500</item>
-        <item name="colorPrimaryDark">@color/material_blue_grey_700</item>
-        <item name="colorAccent">@color/material_blue_grey_200</item>
-        <item name="colorMaterial100">@color/material_blue_grey_100</item>
-        <item name="colorMaterial300">@color/material_blue_grey_300</item>
+    <style name="Theme.SagerNet.Dialog.MistBlue">
+        <item name="colorPrimary">@color/theme_mist_primary</item>
+        <item name="colorPrimaryDark">@color/theme_mist_primary</item>
+        <item name="colorAccent">@color/theme_mist_accent</item>
+        <item name="colorSecondary">@color/theme_mist_accent</item>
+        <item name="colorMaterial100">@color/theme_mist_tint</item>
+        <item name="colorMaterial300">@color/theme_mist_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_mist_accent</item>
+        <item name="fabColorBackground">@color/theme_mist_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_mist_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_mist_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_mist_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_mist_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.Brown">
-        <item name="colorPrimary">@color/material_brown_500</item>
-        <item name="colorPrimaryDark">@color/material_brown_700</item>
-        <item name="colorAccent">@color/material_brown_200</item>
-        <item name="colorMaterial100">@color/material_brown_100</item>
-        <item name="colorMaterial300">@color/material_brown_300</item>
+    <style name="Theme.SagerNet.Sage">
+        <item name="colorPrimary">@color/theme_sage_primary</item>
+        <item name="colorPrimaryDark">@color/theme_sage_primary</item>
+        <item name="colorAccent">@color/theme_sage_accent</item>
+        <item name="colorSecondary">@color/theme_sage_accent</item>
+        <item name="colorMaterial100">@color/theme_sage_tint</item>
+        <item name="colorMaterial300">@color/theme_sage_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_sage_accent</item>
+        <item name="fabColorBackground">@color/theme_sage_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_sage_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_sage_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_sage_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_sage_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.Cyan">
-        <item name="colorPrimary">@color/material_cyan_500</item>
-        <item name="colorPrimaryDark">@color/material_cyan_700</item>
-        <item name="colorAccent">@color/material_cyan_accent_200</item>
-        <item name="colorMaterial100">@color/material_cyan_100</item>
-        <item name="colorMaterial300">@color/material_cyan_300</item>
+    <style name="Theme.SagerNet.Dialog.Sage">
+        <item name="colorPrimary">@color/theme_sage_primary</item>
+        <item name="colorPrimaryDark">@color/theme_sage_primary</item>
+        <item name="colorAccent">@color/theme_sage_accent</item>
+        <item name="colorSecondary">@color/theme_sage_accent</item>
+        <item name="colorMaterial100">@color/theme_sage_tint</item>
+        <item name="colorMaterial300">@color/theme_sage_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_sage_accent</item>
+        <item name="fabColorBackground">@color/theme_sage_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_sage_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_sage_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_sage_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_sage_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.DeepOrange">
-        <item name="colorPrimary">@color/material_deep_orange_500</item>
-        <item name="colorPrimaryDark">@color/material_deep_orange_700</item>
-        <item name="colorAccent">@color/material_deep_orange_accent_200</item>
-        <item name="colorMaterial100">@color/material_deep_orange_100</item>
-        <item name="colorMaterial300">@color/material_deep_orange_300</item>
+    <style name="Theme.SagerNet.Oat">
+        <item name="colorPrimary">@color/theme_oat_primary</item>
+        <item name="colorPrimaryDark">@color/theme_oat_primary</item>
+        <item name="colorAccent">@color/theme_oat_accent</item>
+        <item name="colorSecondary">@color/theme_oat_accent</item>
+        <item name="colorMaterial100">@color/theme_oat_tint</item>
+        <item name="colorMaterial300">@color/theme_oat_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_oat_accent</item>
+        <item name="fabColorBackground">@color/theme_oat_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_oat_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_oat_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_oat_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_oat_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.DeepPurple">
-        <item name="colorPrimary">@color/material_deep_purple_500</item>
-        <item name="colorPrimaryDark">@color/material_deep_purple_700</item>
-        <item name="colorAccent">@color/material_deep_purple_accent_200</item>
-        <item name="colorMaterial100">@color/material_deep_purple_100</item>
-        <item name="colorMaterial300">@color/material_deep_purple_300</item>
+    <style name="Theme.SagerNet.Dialog.Oat">
+        <item name="colorPrimary">@color/theme_oat_primary</item>
+        <item name="colorPrimaryDark">@color/theme_oat_primary</item>
+        <item name="colorAccent">@color/theme_oat_accent</item>
+        <item name="colorSecondary">@color/theme_oat_accent</item>
+        <item name="colorMaterial100">@color/theme_oat_tint</item>
+        <item name="colorMaterial300">@color/theme_oat_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_oat_accent</item>
+        <item name="fabColorBackground">@color/theme_oat_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_oat_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_oat_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_oat_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_oat_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.Green">
-        <item name="colorPrimary">@color/material_green_500</item>
-        <item name="colorPrimaryDark">@color/material_green_700</item>
-        <item name="colorAccent">@color/material_green_accent_200</item>
-        <item name="colorMaterial100">@color/material_green_100</item>
-        <item name="colorMaterial300">@color/material_green_300</item>
+    <style name="Theme.SagerNet.Ink">
+        <item name="colorPrimary">@color/theme_ink_primary</item>
+        <item name="colorPrimaryDark">@color/theme_ink_primary</item>
+        <item name="colorAccent">@color/theme_ink_accent</item>
+        <item name="colorSecondary">@color/theme_ink_accent</item>
+        <item name="colorMaterial100">@color/theme_ink_tint</item>
+        <item name="colorMaterial300">@color/theme_ink_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_ink_accent</item>
+        <item name="fabColorBackground">@color/theme_ink_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_ink_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_ink_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_ink_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_ink_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.Grey">
-        <item name="colorPrimary">@color/material_grey_500</item>
-        <item name="colorPrimaryDark">@color/material_grey_700</item>
-        <item name="colorAccent">@color/material_grey_200</item>
-        <item name="colorMaterial100">@color/material_grey_100</item>
-        <item name="colorMaterial300">@color/material_grey_300</item>
+    <style name="Theme.SagerNet.Dialog.Ink">
+        <item name="colorPrimary">@color/theme_ink_primary</item>
+        <item name="colorPrimaryDark">@color/theme_ink_primary</item>
+        <item name="colorAccent">@color/theme_ink_accent</item>
+        <item name="colorSecondary">@color/theme_ink_accent</item>
+        <item name="colorMaterial100">@color/theme_ink_tint</item>
+        <item name="colorMaterial300">@color/theme_ink_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_ink_accent</item>
+        <item name="fabColorBackground">@color/theme_ink_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_ink_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_ink_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_ink_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_ink_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.Indigo">
-        <item name="colorPrimary">@color/material_indigo_500</item>
-        <item name="colorPrimaryDark">@color/material_indigo_700</item>
-        <item name="colorAccent">@color/material_indigo_accent_200</item>
-        <item name="colorMaterial100">@color/material_indigo_100</item>
-        <item name="colorMaterial300">@color/material_indigo_300</item>
+    <style name="Theme.SagerNet.DustyRose">
+        <item name="colorPrimary">@color/theme_rose_primary</item>
+        <item name="colorPrimaryDark">@color/theme_rose_primary</item>
+        <item name="colorAccent">@color/theme_rose_accent</item>
+        <item name="colorSecondary">@color/theme_rose_accent</item>
+        <item name="colorMaterial100">@color/theme_rose_tint</item>
+        <item name="colorMaterial300">@color/theme_rose_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_rose_accent</item>
+        <item name="fabColorBackground">@color/theme_rose_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_rose_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_rose_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_rose_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_rose_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.LightBlue">
-        <item name="colorPrimary">@color/material_light_blue_500</item>
-        <item name="colorPrimaryDark">@color/material_light_blue_700</item>
-        <item name="colorAccent">@color/material_light_blue_accent_200</item>
-        <item name="colorMaterial100">@color/material_light_blue_100</item>
-        <item name="colorMaterial300">@color/material_light_blue_300</item>
+    <style name="Theme.SagerNet.Dialog.DustyRose">
+        <item name="colorPrimary">@color/theme_rose_primary</item>
+        <item name="colorPrimaryDark">@color/theme_rose_primary</item>
+        <item name="colorAccent">@color/theme_rose_accent</item>
+        <item name="colorSecondary">@color/theme_rose_accent</item>
+        <item name="colorMaterial100">@color/theme_rose_tint</item>
+        <item name="colorMaterial300">@color/theme_rose_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_rose_accent</item>
+        <item name="fabColorBackground">@color/theme_rose_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_rose_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_rose_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_rose_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_rose_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.LightGreen">
-        <item name="colorPrimary">@color/material_light_green_500</item>
-        <item name="colorPrimaryDark">@color/material_light_green_700</item>
-        <item name="colorAccent">@color/material_light_green_accent_200</item>
-        <item name="colorMaterial100">@color/material_light_green_100</item>
-        <item name="colorMaterial300">@color/material_light_green_300</item>
+    <!-- follow the system (Material You) palette on Android 12+, see values-v31 colors -->
+    <style name="Theme.SagerNet.System">
+        <item name="colorPrimary">@color/theme_system_primary</item>
+        <item name="colorPrimaryDark">@color/theme_system_primary</item>
+        <item name="colorAccent">@color/theme_system_accent</item>
+        <item name="colorSecondary">@color/theme_system_accent</item>
+        <item name="colorMaterial100">@color/theme_system_tint</item>
+        <item name="colorMaterial300">@color/theme_system_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_system_accent</item>
+        <item name="fabColorBackground">@color/theme_system_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_system_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_system_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_system_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_system_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.Lime">
-        <item name="colorPrimary">@color/material_lime_500</item>
-        <item name="colorPrimaryDark">@color/material_lime_700</item>
-        <item name="colorAccent">@color/material_lime_accent_200</item>
-        <item name="colorMaterial100">@color/material_lime_100</item>
-        <item name="colorMaterial300">@color/material_lime_300</item>
+    <style name="Theme.SagerNet.Dialog.System">
+        <item name="colorPrimary">@color/theme_system_primary</item>
+        <item name="colorPrimaryDark">@color/theme_system_primary</item>
+        <item name="colorAccent">@color/theme_system_accent</item>
+        <item name="colorSecondary">@color/theme_system_accent</item>
+        <item name="colorMaterial100">@color/theme_system_tint</item>
+        <item name="colorMaterial300">@color/theme_system_primary</item>
+
+        <item name="selectedColorPrimary">@color/theme_system_accent</item>
+        <item name="fabColorBackground">@color/theme_system_primary</item>
+
+        <item name="accentOrTextSecondary">@color/theme_system_accent</item>
+        <item name="accentOrTextPrimary">@color/theme_system_accent</item>
+        <item name="primaryOrTextSecondary">@color/theme_system_accent</item>
+        <item name="primaryOrTextPrimary">@color/theme_system_accent</item>
     </style>
 
-    <style name="Theme.SagerNet.Orange">
-        <item name="colorPrimary">@color/material_orange_500</item>
-        <item name="colorPrimaryDark">@color/material_orange_700</item>
-        <item name="colorAccent">@color/material_orange_accent_200</item>
-        <item name="colorMaterial100">@color/material_orange_100</item>
-        <item name="colorMaterial300">@color/material_orange_300</item>
-    </style>
+    <!-- black and white: black bars, black accents on light, white accents on dark -->
+    <style name="Theme.SagerNet.Monochrome">
+        <item name="colorPrimary">@color/color_mono_primary</item>
+        <item name="colorPrimaryDark">@color/color_mono_primary</item>
+        <item name="colorAccent">@color/color_mono_accent</item>
+        <item name="colorSecondary">@color/color_mono_accent</item>
+        <item name="colorMaterial100">@color/color_mono_progress</item>
+        <item name="colorMaterial300">@color/color_mono_primary</item>
 
-    <style name="Theme.SagerNet.Purple">
-        <item name="colorPrimary">@color/material_purple_500</item>
-        <item name="colorPrimaryDark">@color/material_purple_700</item>
-        <item name="colorAccent">@color/material_purple_accent_200</item>
-        <item name="colorMaterial100">@color/material_purple_100</item>
-        <item name="colorMaterial300">@color/material_purple_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Red">
-        <item name="colorPrimary">@color/material_red_500</item>
-        <item name="colorPrimaryDark">@color/material_red_700</item>
-        <item name="colorAccent">@color/material_red_accent_200</item>
-        <item name="colorMaterial100">@color/material_red_100</item>
-        <item name="colorMaterial300">@color/material_red_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Teal">
-        <item name="colorPrimary">@color/material_teal_500</item>
-        <item name="colorPrimaryDark">@color/material_teal_700</item>
-        <item name="colorAccent">@color/material_teal_accent_200</item>
-        <item name="colorMaterial100">@color/material_teal_100</item>
-        <item name="colorMaterial300">@color/material_teal_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Yellow">
-        <item name="colorPrimary">@color/material_yellow_500</item>
-        <item name="colorPrimaryDark">@color/material_yellow_700</item>
-        <item name="colorAccent">@color/material_yellow_accent_200</item>
-        <item name="colorMaterial100">@color/material_yellow_100</item>
-        <item name="colorMaterial300">@color/material_yellow_300</item>
-        <item name="colorOnPrimarySurface">@color/black</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Amber">
-        <item name="colorPrimary">@color/material_amber_500</item>
-        <item name="colorPrimaryDark">@color/material_amber_700</item>
-        <item name="colorAccent">@color/material_amber_accent_200</item>
-        <item name="colorMaterial100">@color/material_amber_100</item>
-        <item name="colorMaterial300">@color/material_amber_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Blue">
-        <item name="colorPrimary">@color/material_blue_500</item>
-        <item name="colorPrimaryDark">@color/material_blue_700</item>
-        <item name="colorAccent">@color/material_blue_accent_200</item>
-        <item name="colorMaterial100">@color/material_blue_100</item>
-        <item name="colorMaterial300">@color/material_blue_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.BlueGrey">
-        <item name="colorPrimary">@color/material_blue_grey_500</item>
-        <item name="colorPrimaryDark">@color/material_blue_grey_700</item>
-        <item name="colorAccent">@color/material_blue_grey_200</item>
-        <item name="colorMaterial100">@color/material_blue_grey_100</item>
-        <item name="colorMaterial300">@color/material_blue_grey_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Brown">
-        <item name="colorPrimary">@color/material_brown_500</item>
-        <item name="colorPrimaryDark">@color/material_brown_700</item>
-        <item name="colorAccent">@color/material_brown_200</item>
-        <item name="colorMaterial100">@color/material_brown_100</item>
-        <item name="colorMaterial300">@color/material_brown_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Cyan">
-        <item name="colorPrimary">@color/material_cyan_500</item>
-        <item name="colorPrimaryDark">@color/material_cyan_700</item>
-        <item name="colorAccent">@color/material_cyan_accent_200</item>
-        <item name="colorMaterial100">@color/material_cyan_100</item>
-        <item name="colorMaterial300">@color/material_cyan_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.DeepOrange">
-        <item name="colorPrimary">@color/material_deep_orange_500</item>
-        <item name="colorPrimaryDark">@color/material_deep_orange_700</item>
-        <item name="colorAccent">@color/material_deep_orange_accent_200</item>
-        <item name="colorMaterial100">@color/material_deep_orange_100</item>
-        <item name="colorMaterial300">@color/material_deep_orange_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.DeepPurple">
-        <item name="colorPrimary">@color/material_deep_purple_500</item>
-        <item name="colorPrimaryDark">@color/material_deep_purple_700</item>
-        <item name="colorAccent">@color/material_deep_purple_accent_200</item>
-        <item name="colorMaterial100">@color/material_deep_purple_100</item>
-        <item name="colorMaterial300">@color/material_deep_purple_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Green">
-        <item name="colorPrimary">@color/material_green_500</item>
-        <item name="colorPrimaryDark">@color/material_green_700</item>
-        <item name="colorAccent">@color/material_green_accent_200</item>
-        <item name="colorMaterial100">@color/material_green_100</item>
-        <item name="colorMaterial300">@color/material_green_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Grey">
-        <item name="colorPrimary">@color/material_grey_500</item>
-        <item name="colorPrimaryDark">@color/material_grey_700</item>
-        <item name="colorAccent">@color/material_grey_200</item>
-        <item name="colorMaterial100">@color/material_grey_100</item>
-        <item name="colorMaterial300">@color/material_grey_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Indigo">
-        <item name="colorPrimary">@color/material_indigo_500</item>
-        <item name="colorPrimaryDark">@color/material_indigo_700</item>
-        <item name="colorAccent">@color/material_indigo_accent_200</item>
-        <item name="colorMaterial100">@color/material_indigo_100</item>
-        <item name="colorMaterial300">@color/material_indigo_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.LightBlue">
-        <item name="colorPrimary">@color/material_light_blue_500</item>
-        <item name="colorPrimaryDark">@color/material_light_blue_700</item>
-        <item name="colorAccent">@color/material_light_blue_accent_200</item>
-        <item name="colorMaterial100">@color/material_light_blue_100</item>
-        <item name="colorMaterial300">@color/material_light_blue_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.LightGreen">
-        <item name="colorPrimary">@color/material_light_green_500</item>
-        <item name="colorPrimaryDark">@color/material_light_green_700</item>
-        <item name="colorAccent">@color/material_light_green_accent_200</item>
-        <item name="colorMaterial100">@color/material_light_green_100</item>
-        <item name="colorMaterial300">@color/material_light_green_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Lime">
-        <item name="colorPrimary">@color/material_lime_500</item>
-        <item name="colorPrimaryDark">@color/material_lime_700</item>
-        <item name="colorAccent">@color/material_lime_accent_200</item>
-        <item name="colorMaterial100">@color/material_lime_100</item>
-        <item name="colorMaterial300">@color/material_lime_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Orange">
-        <item name="colorPrimary">@color/material_orange_500</item>
-        <item name="colorPrimaryDark">@color/material_orange_700</item>
-        <item name="colorAccent">@color/material_orange_accent_200</item>
-        <item name="colorMaterial100">@color/material_orange_100</item>
-        <item name="colorMaterial300">@color/material_orange_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Purple">
-        <item name="colorPrimary">@color/material_purple_500</item>
-        <item name="colorPrimaryDark">@color/material_purple_700</item>
-        <item name="colorAccent">@color/material_purple_accent_200</item>
-        <item name="colorMaterial100">@color/material_purple_100</item>
-        <item name="colorMaterial300">@color/material_purple_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Red">
-        <item name="colorPrimary">@color/material_red_500</item>
-        <item name="colorPrimaryDark">@color/material_red_700</item>
-        <item name="colorAccent">@color/material_red_accent_200</item>
-        <item name="colorMaterial100">@color/material_red_100</item>
-        <item name="colorMaterial300">@color/material_red_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Pink_SSR">
-        <item name="colorPrimary">@color/color_pink_ssr</item>
-        <item name="colorPrimaryDark">@color/color_pink_ssr</item>
-        <item name="colorAccent">@color/material_pink_accent_200</item>
-        <item name="colorMaterial100">@color/material_pink_accent_100</item>
-        <item name="colorMaterial300">@color/color_pink_ssr</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Teal">
-        <item name="colorPrimary">@color/material_teal_500</item>
-        <item name="colorPrimaryDark">@color/material_teal_700</item>
-        <item name="colorAccent">@color/material_teal_accent_200</item>
-        <item name="colorMaterial100">@color/material_teal_100</item>
-        <item name="colorMaterial300">@color/material_teal_300</item>
-    </style>
-
-    <style name="Theme.SagerNet.Dialog.Yellow">
-        <item name="colorPrimary">@color/material_yellow_500</item>
-        <item name="colorPrimaryDark">@color/material_yellow_700</item>
-        <item name="colorAccent">@color/material_yellow_accent_200</item>
-        <item name="colorMaterial100">@color/material_yellow_100</item>
-        <item name="colorMaterial300">@color/material_yellow_300</item>
-        <item name="colorOnPrimarySurface">@color/black</item>
-    </style>
-
-    <style name="Theme.SagerNet.Black">
-        <item name="colorPrimary">@color/color_ng_black_primary</item>
-        <item name="colorPrimaryDark">@color/color_ng_black_primary</item>
-        <item name="colorAccent">@color/color_ng_black_accent</item>
-        <item name="colorMaterial100">@color/color_ng_black_primary</item>
-        <item name="colorMaterial300">@color/color_ng_black_primary</item>
-
-        <item name="selectedColorPrimary">@color/color_ng_black_accent</item>
-        <item name="fabColorBackground">@color/color_ng_black_accent</item>
-        <item name="itemShapeFillColor">@color/color_ng_black_accent</item>
+        <item name="selectedColorPrimary">@color/color_mono_accent</item>
+        <item name="fabColorBackground">@color/color_mono_fab</item>
+        <item name="itemShapeFillColor">@color/color_mono_nav_selected</item>
 
         <item name="accentOrTextSecondary">?android:textColorSecondary</item>
         <item name="accentOrTextPrimary">?android:textColorPrimary</item>
-        <item name="primaryOrTextSecondary">?android:textColorSecondary</item>
+        <item name="primaryOrTextSecondary">?android:textColorPrimary</item>
         <item name="primaryOrTextPrimary">?android:textColorPrimary</item>
     </style>
 
-    <style name="Theme.SagerNet.Dialog.Black">
-        <item name="colorPrimary">@color/color_ng_black_primary</item>
-        <item name="colorPrimaryDark">@color/color_ng_black_primary</item>
-        <item name="colorAccent">@color/color_ng_black_accent</item>
-        <item name="colorMaterial100">@color/color_ng_black_primary</item>
-        <item name="colorMaterial300">@color/color_ng_black_primary</item>
+    <style name="Theme.SagerNet.Dialog.Monochrome">
+        <item name="colorPrimary">@color/color_mono_primary</item>
+        <item name="colorPrimaryDark">@color/color_mono_primary</item>
+        <item name="colorAccent">@color/color_mono_accent</item>
+        <item name="colorSecondary">@color/color_mono_accent</item>
+        <item name="colorMaterial100">@color/color_mono_progress</item>
+        <item name="colorMaterial300">@color/color_mono_primary</item>
 
-        <item name="selectedColorPrimary">@color/color_ng_black_accent</item>
-        <item name="fabColorBackground">@color/color_ng_black_accent</item>
-        <item name="itemShapeFillColor">@color/color_ng_black_accent</item>
+        <item name="selectedColorPrimary">@color/color_mono_accent</item>
+        <item name="fabColorBackground">@color/color_mono_fab</item>
+        <item name="itemShapeFillColor">@color/color_mono_nav_selected</item>
 
         <item name="accentOrTextSecondary">?android:textColorSecondary</item>
         <item name="accentOrTextPrimary">?android:textColorPrimary</item>
-        <item name="primaryOrTextSecondary">?android:textColorSecondary</item>
+        <item name="primaryOrTextSecondary">?android:textColorPrimary</item>
         <item name="primaryOrTextPrimary">?android:textColorPrimary</item>
     </style>
 

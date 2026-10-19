@@ -67,15 +67,9 @@ jobs:
       - name: Build Hev Tunnel
         if: steps.hev-cache.outputs.cache-hit != 'true'
         run: ./run lib hevtun
-      # Signing: use the KEYSTORE_BASE64 / KEYSTORE_PASS / ALIAS_NAME / ALIAS_PASS secrets if set,
-      # otherwise generate a keystore once and keep it in the Actions cache, so later builds
-      # keep the same signature and can be installed over each other.
-      - name: Signing Keystore Cache
-        id: keystore-cache
-        uses: actions/cache@v4
-        with:
-          path: signing/release.keystore
-          key: signing-keystore-v1
+      # Signing: releases must use the permanent key from the KEYSTORE_BASE64 / KEYSTORE_PASS /
+      # ALIAS_NAME / ALIAS_PASS secrets. No fallback key: a release signed with another key
+      # can't be installed over the previous one.
       - name: Prepare Signing
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -83,25 +77,15 @@ jobs:
           SECRET_ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
           SECRET_ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-            echo "KEYSTORE_PASS=$SECRET_KEYSTORE_PASS" >> $GITHUB_ENV
-            echo "ALIAS_NAME=$SECRET_ALIAS_NAME" >> $GITHUB_ENV
-            echo "ALIAS_PASS=$SECRET_ALIAS_PASS" >> $GITHUB_ENV
-            echo "Using keystore from secrets"
-          else
-            if [ ! -f signing/release.keystore ]; then
-              mkdir -p signing
-              keytool -genkeypair -noprompt -keystore signing/release.keystore \
-                -storepass nekobox-autogen -keypass nekobox-autogen -alias nekobox \
-                -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=NekoBox"
-              echo "::warning::Generated a new signing keystore. Set the KEYSTORE_BASE64 secret to keep a permanent signature."
-            fi
-            cp signing/release.keystore release.keystore
-            echo "KEYSTORE_PASS=nekobox-autogen" >> $GITHUB_ENV
-            echo "ALIAS_NAME=nekobox" >> $GITHUB_ENV
-            echo "ALIAS_PASS=nekobox-autogen" >> $GITHUB_ENV
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$SECRET_KEYSTORE_PASS" ] || [ -z "$SECRET_ALIAS_NAME" ] || [ -z "$SECRET_ALIAS_PASS" ]; then
+            echo "::error::Signing secrets are missing, refusing to build a release with another key."
+            exit 1
           fi
+          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          echo "KEYSTORE_PASS=$SECRET_KEYSTORE_PASS" >> $GITHUB_ENV
+          echo "ALIAS_NAME=$SECRET_ALIAS_NAME" >> $GITHUB_ENV
+          echo "ALIAS_PASS=$SECRET_ALIAS_PASS" >> $GITHUB_ENV
+          echo "Using keystore from secrets"
       - name: Gradle Build
         env:
           BUILD_PLUGIN: none
@@ -113,6 +97,20 @@ jobs:
           APK=$(find app/build/outputs/apk -name '*arm64-v8a*.apk')
           APK=$(dirname $APK)
           echo "APK=$APK" >> $GITHUB_ENV
+      - name: Verify Signature
+        env:
+          # SHA-256 of the release signing certificate (public, not a secret)
+          EXPECTED_CERT_SHA256: 52ac5a16920e0f0c8a9f6f2a477b0dcc6499db93a46efc6c0dc15fe55d341ba1
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          for apk in "$APK"/*.apk; do
+            actual=$("$APKSIGNER" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+            if [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
+              echo "::error::$apk is signed with $actual, expected $EXPECTED_CERT_SHA256"
+              exit 1
+            fi
+            echo "$(basename "$apk"): signature OK"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: APKs

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- follow the system: the wallpaper based (Material You) palette -->
+    <color name="theme_system_primary">@android:color/system_accent1_700</color>
+    <color name="theme_system_accent">@android:color/system_accent1_600</color>
+    <color name="theme_system_tint">@android:color/system_accent1_200</color>
+</resources>
