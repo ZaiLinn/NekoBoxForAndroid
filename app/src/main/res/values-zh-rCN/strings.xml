@@ -502,6 +502,15 @@
     <string name="global_allow_insecure">总是跳过 TLS 证书验证</string>
     <string name="network_change_reset_connections">当网络发生变化时重置出站连接</string>
     <string name="wake_reset_connections">当设备从睡眠状态唤醒时重置出站连接</string>
+    <string name="screen_off_reset_seconds">息屏至少多久后亮屏重置</string>
+    <string name="screen_off_reset_30s">30 秒</string>
+    <string name="screen_off_reset_1m">1 分钟</string>
+    <string name="screen_off_reset_2m">2 分钟</string>
+    <string name="screen_off_reset_5m">5 分钟</string>
+    <string name="keep_quic_on_network_change">网络切换时保留 QUIC 连接</string>
+    <string name="keep_quic_on_network_change_sum">对 Hysteria、TUIC 节点，网络切换时让 QUIC 自行迁移到新网络，不重置连接。其他出站在旧网络上建立的连接可能卡住直到超时。</string>
+    <string name="pause_core_in_doze">Doze 时暂停核心</string>
+    <string name="pause_core_in_doze_sum">设备空闲（Doze）时暂停核心。更省电，但 WireGuard 会断开，推送消息可能在唤醒前收不到。</string>
     <string name="preview_version_hint">本应用为预览版，可能存在诸多问题。若您不愿参与测试，请前往GitHub下载正式发布版本！</string>
     <string name="check_update_preview">检查预览版更新</string>
     <string name="check_update_release">检查正式版更新</string>

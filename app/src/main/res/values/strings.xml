@@ -584,6 +584,15 @@
     <string name="padding">Padding</string>
     <string name="network_change_reset_connections">Reset outbound connections when network changes</string>
     <string name="wake_reset_connections">Reset outbound connections when device wake from sleep</string>
+    <string name="screen_off_reset_seconds">Reset after screen off for at least</string>
+    <string name="screen_off_reset_30s">30 seconds</string>
+    <string name="screen_off_reset_1m">1 minute</string>
+    <string name="screen_off_reset_2m">2 minutes</string>
+    <string name="screen_off_reset_5m">5 minutes</string>
+    <string name="keep_quic_on_network_change">Keep QUIC connections on network change</string>
+    <string name="keep_quic_on_network_change_sum">For a Hysteria or TUIC proxy, let QUIC migrate to the new network instead of resetting connections. Connections of other outbounds made on the old network may stall until they time out.</string>
+    <string name="pause_core_in_doze">Pause core in Doze</string>
+    <string name="pause_core_in_doze_sum">Pause the core while the device is idle. Saves battery, but WireGuard goes down and push messages may stop until the device wakes.</string>
     <string name="preview_version_hint">This application is a preview version and may contain many problems. If you do not want to test it, please go to GitHub to download the Release version!</string>
     <string name="check_update_preview">Check for preview version updates</string>
     <string name="check_update_release">Check for release version updates</string>

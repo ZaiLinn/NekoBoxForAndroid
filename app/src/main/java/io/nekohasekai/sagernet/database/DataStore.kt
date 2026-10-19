@@ -94,6 +94,9 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var allowInsecureOnRequest by configurationStore.boolean(Key.ALLOW_INSECURE_ON_REQUEST)
     var networkChangeResetConnections by configurationStore.boolean(Key.NETWORK_CHANGE_RESET_CONNECTIONS) { true }
     var wakeResetConnections by configurationStore.boolean(Key.WAKE_RESET_CONNECTIONS) { true }
+    var screenOffResetSeconds by configurationStore.stringToInt(Key.SCREEN_OFF_RESET_SECONDS) { 120 }
+    var pauseCoreInDoze by configurationStore.boolean(Key.PAUSE_CORE_IN_DOZE)
+    var keepQuicOnNetworkChange by configurationStore.boolean(Key.KEEP_QUIC_ON_NETWORK_CHANGE)
 
     //
 

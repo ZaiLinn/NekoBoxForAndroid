@@ -19,3 +19,6 @@ jniLibs/
 # submodules
 /external
 app/executableSo/
+
+# signing key, written by CI from secrets; never commit it
+release.keystore

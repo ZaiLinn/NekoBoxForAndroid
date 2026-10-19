@@ -15,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import java.net.UnknownHostException
 
 object DefaultNetworkListener {
@@ -26,6 +25,12 @@ object DefaultNetworkListener {
         }
 
         class Stop(val key: Any) : NetworkMessage()
+
+        /** A [Get] that timed out or was cancelled. */
+        class Abandon(val request: Get) : NetworkMessage()
+
+        /** Try to register again after every registration failed. */
+        object Retry : NetworkMessage()
 
         class Put(val network: Network) : NetworkMessage()
         class Update(val network: Network) : NetworkMessage()
@@ -45,30 +50,35 @@ object DefaultNetworkListener {
         }
 
         var network: Network? = null
-        val pendingRequests = arrayListOf<NetworkMessage.Get>()
+        val pendingRequests = PendingRequests<Network>()
         for (message in channel) when (message) {
             is NetworkMessage.Start -> {
                 if (listeners.isEmpty()) register()
                 listeners[message.key] = message.listener
                 if (network != null) notify(message.listener, network)
             }
-            is NetworkMessage.Get -> {
-                check(listeners.isNotEmpty()) { "Getting network without any listeners is not supported" }
-                if (network == null) pendingRequests += message else message.response.complete(
-                    network
+            is NetworkMessage.Get -> when {
+                // check() here would end the actor
+                listeners.isEmpty() -> message.response.completeExceptionally(
+                    IllegalStateException("Getting network without any listeners is not supported")
                 )
+
+                network == null -> pendingRequests.add(message.response)
+                else -> message.response.complete(network)
             }
+            is NetworkMessage.Abandon -> pendingRequests.remove(message.request.response)
+            is NetworkMessage.Retry -> if (listeners.isNotEmpty() && !registered) register()
             is NetworkMessage.Stop -> if (listeners.isNotEmpty() && // was not empty
                 listeners.remove(message.key) != null && listeners.isEmpty()
             ) {
                 network = null
+                pendingRequests.failAll(UnknownHostException())
                 unregister()
             }
 
             is NetworkMessage.Put -> {
                 network = message.network
-                pendingRequests.forEach { it.response.complete(message.network) }
-                pendingRequests.clear()
+                pendingRequests.completeAll(message.network)
                 listeners.values.forEach { notify(it, network) }
             }
             is NetworkMessage.Update -> if (network == message.network) listeners.values.forEach {
@@ -92,8 +102,16 @@ object DefaultNetworkListener {
             ?: throw UnknownHostException() // failed to listen, return current if available
     } else NetworkMessage.Get().run {
         networkActor.send(this)
-        withTimeoutOrNull(timeoutMs) { response.await() } ?: throw UnknownHostException()
+        awaitOrAbandon(response, timeoutMs) {
+            networkActor.trySend(NetworkMessage.Abandon(this))
+        } ?: throw UnknownHostException()
     }
+
+    /**
+     * False when no network callback could be registered: network changes are then not
+     * delivered to listeners until a retry succeeds, even though [get] still works.
+     */
+    val listening get() = registered
 
     suspend fun stop(key: Any) = networkActor.send(NetworkMessage.Stop(key))
 
@@ -113,7 +131,11 @@ object DefaultNetworkListener {
     }
 
     private var fallback = false
+
+    @Volatile
     private var registered = false
+    private var retryAttempt = 0
+    private val retry = Runnable { networkActor.trySend(NetworkMessage.Retry) }
     private val request = NetworkRequest.Builder().apply {
         addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
@@ -159,6 +181,7 @@ object DefaultNetworkListener {
                 }
             }
             registered = true
+            retryAttempt = 0
         } catch (e: Exception) {
             Logs.w(e)
             fallback = true
@@ -179,13 +202,19 @@ object DefaultNetworkListener {
                 SagerNet.connectivity.registerNetworkCallback(request, Callback)
             }
             registered = true
+            retryAttempt = 0
         } catch (e: Exception) {
             Logs.w(e)
+            val delay = listenRetryDelayMs(retryAttempt++)
+            Logs.w("Network callback unavailable, network changes are not monitored, retry in ${delay / 1000}s")
+            mainHandler.postDelayed(retry, delay)
         }
     }
 
     // a callback that was never registered throws IllegalArgumentException here
     private fun unregister() {
+        mainHandler.removeCallbacks(retry)
+        retryAttempt = 0
         if (!registered) return
         registered = false
         try {
