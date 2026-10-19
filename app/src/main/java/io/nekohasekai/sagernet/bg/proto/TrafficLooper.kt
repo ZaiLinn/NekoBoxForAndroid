@@ -100,7 +100,10 @@ class TrafficLooper
             }
 
             if (trafficUpdater == null) {
-                if (!proxy.isInitialized()) continue
+                if (!proxy.isInitialized()) {
+                    delay(delayMs)
+                    continue
+                }
                 idMap.clear()
                 idMap[-1] = itemBypass
                 //
@@ -163,7 +166,7 @@ class TrafficLooper
                 && data.binder.callbackIdMap.containsValue(SagerConnection.CONNECTION_ID_MAIN_ACTIVITY_FOREGROUND)
             ) {
                 data.binder.broadcast { b ->
-                    if (data.binder.callbackIdMap[b] == SagerConnection.CONNECTION_ID_MAIN_ACTIVITY_FOREGROUND) {
+                    if (data.binder.callbackIdMap[b.asBinder()] == SagerConnection.CONNECTION_ID_MAIN_ACTIVITY_FOREGROUND) {
                         b.cbSpeedUpdate(speed)
                         if (profileTrafficStatistics) {
                             idMap.forEach { (id, item) ->

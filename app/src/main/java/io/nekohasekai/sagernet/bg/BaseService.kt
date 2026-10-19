@@ -26,6 +26,7 @@ import libcore.Libcore
 import moe.matsuri.nb4a.Protocols
 import moe.matsuri.nb4a.utils.Util
 import java.net.UnknownHostException
+import java.util.concurrent.ConcurrentHashMap
 
 class BaseService {
 
@@ -117,10 +118,13 @@ class BaseService {
         private val callbacks = object : RemoteCallbackList<ISagerNetServiceCallback>() {
             override fun onCallbackDied(callback: ISagerNetServiceCallback?, cookie: Any?) {
                 super.onCallbackDied(callback, cookie)
+                callback?.let { callbackIdMap.remove(it.asBinder()) }
             }
         }
 
-        val callbackIdMap = mutableMapOf<ISagerNetServiceCallback, Int>()
+        // keyed by binder: every IPC call creates a new proxy object for the same callback,
+        // and this map is accessed from binder threads and TrafficLooper concurrently
+        val callbackIdMap = ConcurrentHashMap<IBinder, Int>()
 
         override val coroutineContext = Dispatchers.Main.immediate + Job()
 
@@ -132,10 +136,10 @@ class BaseService {
                 Runtime.getRuntime().exit(0)
                 return
             }
-            if (!callbackIdMap.contains(cb)) {
+            if (!callbackIdMap.containsKey(cb.asBinder())) {
                 callbacks.register(cb)
             }
-            callbackIdMap[cb] = id
+            callbackIdMap[cb.asBinder()] = id
         }
 
         private val broadcastMutex = Mutex()
@@ -158,7 +162,7 @@ class BaseService {
         }
 
         override fun unregisterCallback(cb: ISagerNetServiceCallback) {
-            callbackIdMap.remove(cb)
+            callbackIdMap.remove(cb.asBinder())
             callbacks.unregister(cb)
         }
 
@@ -203,6 +207,7 @@ class BaseService {
         fun reload() {
             if (DataStore.selectedProxy == 0L) {
                 stopRunner(false, (this as Context).getString(R.string.profile_empty))
+                return
             }
             if (canReloadSelector()) {
                 val ent = SagerDatabase.proxyDao.getById(DataStore.selectedProxy)
@@ -389,7 +394,7 @@ class BaseService {
             }
 
             data.changeState(State.Connecting)
-            runOnMainDispatcher {
+            data.connectingJob = runOnMainDispatcher {
                 try {
                     data.notification = createNotification(ServiceNotification.genTitle(profile))
 
