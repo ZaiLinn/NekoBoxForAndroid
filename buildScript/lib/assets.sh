@@ -7,10 +7,24 @@ rm -rf $DIR
 mkdir -p $DIR
 cd $DIR
 
+# Unauthenticated API calls are rate limited (shared CI runners hit it), which returned an
+# empty tag and a 404 download: use GITHUB_TOKEN when set, and fall back to the tag that
+# github.com/<repo>/releases/latest redirects to.
 get_latest_release() {
-  curl --silent "https://api.github.com/repos/$1/releases/latest" | # Get latest release from GitHub api
-    grep '"tag_name":' |                                            # Get tag line
-    sed -E 's/.*"([^"]+)".*/\1/'                                    # Pluck JSON value
+  local tag
+  tag=$(curl --silent ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \
+    "https://api.github.com/repos/$1/releases/latest" |
+    grep '"tag_name":' |
+    sed -E 's/.*"([^"]+)".*/\1/')
+  if [ -z "$tag" ]; then
+    tag=$(curl --silent --head "https://github.com/$1/releases/latest" |
+      grep -i '^location:' | sed -E 's|.*/tag/([^[:space:]]+).*|\1|' | tr -d '\r')
+  fi
+  if [ -z "$tag" ]; then
+    echo "cannot find the latest release of $1" >&2
+    exit 1
+  fi
+  echo "$tag"
 }
 
 ####
