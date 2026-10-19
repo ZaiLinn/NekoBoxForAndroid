@@ -102,11 +102,15 @@ jobs:
           # SHA-256 of the release signing certificate (public, not a secret)
           EXPECTED_CERT_SHA256: 52ac5a16920e0f0c8a9f6f2a477b0dcc6499db93a46efc6c0dc15fe55d341ba1
         run: |
-          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          # the build tools the build itself uses (buildSrc/Helpers.kt); the newest on the runner
+          # may need a newer Java
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.1/apksigner"
           for apk in "$APK"/*.apk; do
-            actual=$("$APKSIGNER" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+            out=$("$APKSIGNER" verify --print-certs "$apk" 2>&1) || { echo "$out"; echo "::error::apksigner failed on $apk"; exit 1; }
+            actual=$(echo "$out" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
             if [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
-              echo "::error::$apk is signed with $actual, expected $EXPECTED_CERT_SHA256"
+              echo "$out"
+              echo "::error::$apk is signed with '$actual', expected $EXPECTED_CERT_SHA256"
               exit 1
             fi
             echo "$(basename "$apk"): signature OK"
