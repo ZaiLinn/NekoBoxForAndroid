@@ -62,6 +62,7 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
             true
         }
         val mixedPort = findPreference<EditTextPreference>(Key.MIXED_PORT)!!
+        val rootLanSharing = findPreference<SwitchPreference>(Key.ROOT_LAN_SHARING)!!
         val serviceMode = findPreference<Preference>(Key.SERVICE_MODE)!!
         val allowAccess = findPreference<Preference>(Key.ALLOW_ACCESS)!!
         val appendHttpProxy = findPreference<SwitchPreference>(Key.APPEND_HTTP_PROXY)!!
@@ -111,6 +112,7 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
         }
 
         mixedPort.setOnBindEditTextListener(EditTextPreferenceModifiers.Port)
+        rootLanSharing.isVisible = DataStore.serviceMode == Key.MODE_TRANS
 
         val metedNetwork = findPreference<Preference>(Key.METERED_NETWORK)!!
         if (Build.VERSION.SDK_INT < 28) {
@@ -133,8 +135,9 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
             true
         }
 
-        serviceMode.setOnPreferenceChangeListener { _, _ ->
+        serviceMode.setOnPreferenceChangeListener { _, newValue ->
             if (DataStore.serviceState.started) SagerNet.stopService()
+            rootLanSharing.isVisible = newValue == Key.MODE_TRANS
             true
         }
 
@@ -149,6 +152,7 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
         }
 
         mixedPort.onPreferenceChangeListener = reloadListener
+        rootLanSharing.onPreferenceChangeListener = reloadListener
         appendHttpProxy.onPreferenceChangeListener = reloadListener
         showDirectSpeed.onPreferenceChangeListener = reloadListener
         trafficSniffing.onPreferenceChangeListener = reloadListener

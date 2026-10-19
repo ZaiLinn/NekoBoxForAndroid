@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.*
 import android.widget.Toast
 import io.nekohasekai.sagernet.Action
@@ -26,12 +27,16 @@ import libcore.Libcore
 import moe.matsuri.nb4a.Protocols
 import moe.matsuri.nb4a.utils.Util
 import java.net.UnknownHostException
+import java.util.concurrent.ConcurrentHashMap
 
 class BaseService {
 
     companion object {
         // reset connections on screen on only if the screen has been off for this long (ms)
         const val SCREEN_OFF_RESET_THRESHOLD = 2 * 60 * 1000L
+
+        // screen on, device idle exit and Wi-Fi reconnect often happen together, reset only once
+        const val WAKE_RESET_DEBOUNCE = 5 * 1000L
     }
 
     enum class State(
@@ -53,6 +58,21 @@ class BaseService {
         var notification: ServiceNotification? = null
         var upstreamNetwork: Network? = null
         var screenOffAt = 0L
+        private var lastResetAt = 0L
+
+        /**
+         * @param force network changed: always reset, connections made on the old network are dead
+         */
+        fun resetConnections(reason: String, force: Boolean) {
+            val now = SystemClock.elapsedRealtime()
+            if (!force && now - lastResetAt < WAKE_RESET_DEBOUNCE) {
+                Logs.d("$reason, skip reset connections (just reset)")
+                return
+            }
+            lastResetAt = now
+            Logs.d("$reason, reset connections")
+            runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
+        }
 
         val receiver = broadcastReceiver { ctx, intent ->
             when (intent.action) {
@@ -62,12 +82,11 @@ class BaseService {
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         if (SagerNet.power.isDeviceIdleMode) {
-                            proxy?.box?.sleep()
+                            proxy?.takeIf { it.isInitialized() }?.box?.sleep()
                         } else {
-                            proxy?.box?.wake()
+                            proxy?.takeIf { it.isInitialized() }?.box?.wake()
                             if (DataStore.wakeResetConnections) {
-                                Logs.d("Device wake from idle, reset connections")
-                                runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
+                                resetConnections("Device wake from idle", false)
                             }
                         }
                     }
@@ -82,8 +101,7 @@ class BaseService {
                     if (offAt > 0L && DataStore.wakeResetConnections &&
                         SystemClock.elapsedRealtime() - offAt >= SCREEN_OFF_RESET_THRESHOLD
                     ) {
-                        Logs.d("Screen on after long screen off, reset connections")
-                        runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
+                        resetConnections("Screen on after long screen off", false)
                     }
                 }
 
@@ -117,10 +135,13 @@ class BaseService {
         private val callbacks = object : RemoteCallbackList<ISagerNetServiceCallback>() {
             override fun onCallbackDied(callback: ISagerNetServiceCallback?, cookie: Any?) {
                 super.onCallbackDied(callback, cookie)
+                callback?.let { callbackIdMap.remove(it.asBinder()) }
             }
         }
 
-        val callbackIdMap = mutableMapOf<ISagerNetServiceCallback, Int>()
+        // keyed by binder: every IPC call creates a new proxy object for the same callback,
+        // and this map is accessed from binder threads and TrafficLooper concurrently
+        val callbackIdMap = ConcurrentHashMap<IBinder, Int>()
 
         override val coroutineContext = Dispatchers.Main.immediate + Job()
 
@@ -132,10 +153,10 @@ class BaseService {
                 Runtime.getRuntime().exit(0)
                 return
             }
-            if (!callbackIdMap.contains(cb)) {
+            if (!callbackIdMap.containsKey(cb.asBinder())) {
                 callbacks.register(cb)
             }
-            callbackIdMap[cb] = id
+            callbackIdMap[cb.asBinder()] = id
         }
 
         private val broadcastMutex = Mutex()
@@ -158,7 +179,7 @@ class BaseService {
         }
 
         override fun unregisterCallback(cb: ISagerNetServiceCallback) {
-            callbackIdMap.remove(cb)
+            callbackIdMap.remove(cb.asBinder())
             callbacks.unregister(cb)
         }
 
@@ -203,6 +224,7 @@ class BaseService {
         fun reload() {
             if (DataStore.selectedProxy == 0L) {
                 stopRunner(false, (this as Context).getString(R.string.profile_empty))
+                return
             }
             if (canReloadSelector()) {
                 val ent = SagerDatabase.proxyDao.getById(DataStore.selectedProxy)
@@ -297,6 +319,15 @@ class BaseService {
         var upstreamInterfaceName: String?
 
         suspend fun preInit() {
+            // The listener callback is delivered on the main thread, which is busy starting the
+            // core, so seed the current network now; otherwise local DNS uses the VPN itself.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val active = SagerNet.connectivity.activeNetwork
+                val caps = active?.let { SagerNet.connectivity.getNetworkCapabilities(it) }
+                if (caps != null && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                    SagerNet.underlyingNetwork = active
+                }
+            }
             DefaultNetworkListener.start(this) {
                 if (it == null) {
                     // keep upstreamNetwork, so that a reconnect is detected as a network change
@@ -316,7 +347,7 @@ class BaseService {
                     if (oldNetwork != null && oldNetwork != it) {
                         Logs.d("Network changed: $oldName -> ${link.interfaceName}")
                         if (DataStore.networkChangeResetConnections) {
-                            runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
+                            data.resetConnections("Network changed", true)
                         }
                     }
                 }
@@ -389,7 +420,7 @@ class BaseService {
             }
 
             data.changeState(State.Connecting)
-            runOnMainDispatcher {
+            data.connectingJob = runOnMainDispatcher {
                 try {
                     data.notification = createNotification(ServiceNotification.genTitle(profile))
 

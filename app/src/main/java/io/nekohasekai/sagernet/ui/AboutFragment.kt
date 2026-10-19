@@ -38,6 +38,11 @@ import org.json.JSONObject
 
 class AboutFragment : ToolbarFragment(R.layout.layout_about) {
 
+    companion object {
+        const val PROJECT_REPO = "ZaiLinn/NekoBoxForAndroid"
+        const val PROJECT_URL = "https://github.com/$PROJECT_REPO"
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -82,9 +87,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                                 .text(R.string.app_version)
                                 .subText(SagerNet.appVersionNameForDisplay)
                                 .setOnClickAction {
-                                    requireContext().launchCustomTab(
-                                        "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases"
-                                    )
+                                    requireContext().launchCustomTab("$PROJECT_URL/releases")
                                 }
                                 .build())
                         .addItem(
@@ -96,28 +99,10 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                                 .build())
                         .addItem(
                             MaterialAboutActionItem.Builder()
-                                .text(R.string.check_update_preview)
-                                .setOnClickAction {
-                                    checkUpdate(true)
-                                }
-                                .build())
-                        .addItem(
-                            MaterialAboutActionItem.Builder()
                                 .icon(R.drawable.ic_baseline_layers_24)
                                 .text(getString(R.string.version_x, "sing-box"))
                                 .subText(Libcore.versionBox())
                                 .setOnClickAction { }
-                                .build())
-                        .addItem(
-                            MaterialAboutActionItem.Builder()
-                                .icon(R.drawable.ic_baseline_card_giftcard_24)
-                                .text(R.string.donate)
-                                .subText(R.string.donate_info)
-                                .setOnClickAction {
-                                    requireContext().launchCustomTab(
-                                        "https://matsuridayo.github.io/index_docs/#donate"
-                                    )
-                                }
                                 .build())
                         .apply {
                             PackageCache.awaitLoadSync()
@@ -182,20 +167,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                                 .icon(R.drawable.ic_baseline_sanitizer_24)
                                 .text(R.string.github)
                                 .setOnClickAction {
-                                    requireContext().launchCustomTab(
-                                        "https://github.com/MatsuriDayo/NekoBoxForAndroid"
-
-                                    )
-                                }
-                                .build())
-                        .addItem(
-                            MaterialAboutActionItem.Builder()
-                                .icon(R.drawable.ic_qu_shadowsocks_foreground)
-                                .text(R.string.telegram)
-                                .setOnClickAction {
-                                    requireContext().launchCustomTab(
-                                        "https://t.me/MatsuriDayo"
-                                    )
+                                    requireContext().launchCustomTab(PROJECT_URL)
                                 }
                                 .build())
                         .build())
@@ -220,9 +192,9 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                     }
                     val response = client.newRequest().apply {
                         if (checkPreview) {
-                            setURL("https://api.github.com/repos/MatsuriDayo/NekoBoxForAndroid/releases/tags/preview")
+                            setURL("https://api.github.com/repos/$PROJECT_REPO/releases/tags/preview")
                         } else {
-                            setURL("https://api.github.com/repos/MatsuriDayo/NekoBoxForAndroid/releases/latest")
+                            setURL("https://api.github.com/repos/$PROJECT_REPO/releases/latest")
                         }
                     }.execute()
                     val release = JSONObject(Util.getStringBox(response.contentString))

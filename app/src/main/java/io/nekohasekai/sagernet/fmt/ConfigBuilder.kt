@@ -133,6 +133,7 @@ fun buildConfig(
     val domainListDNSDirectForce = mutableListOf<String>()
     val bypassDNSBeans = hashSetOf<AbstractBean>()
     val isVPN = DataStore.serviceMode == Key.MODE_VPN
+    val isTransproxy = DataStore.serviceMode == Key.MODE_TRANS
     val bind = if (!forTest && DataStore.allowAccess) "0.0.0.0" else LOCALHOST
     val remoteDns = DataStore.remoteDns.split("\n")
         .mapNotNull { dns -> dns.trim().takeIf { it.isNotBlank() && !it.startsWith("#") } }
@@ -178,6 +179,8 @@ fun buildConfig(
             servers = mutableListOf()
             rules = mutableListOf()
             independent_cache = true
+            // transparent proxy gets real IPs (no FakeDNS): map them back to domains for routing
+            if (isTransproxy) reverse_mapping = true
         }
 
         fun autoDnsDomainStrategy(s: String): String? {
@@ -694,6 +697,7 @@ fun buildConfig(
                 port = listOf(53)
                 action = "hijack-dns"
             })
+
             if (DataStore.bypassLanInCore) {
                 route.rules.add(Rule_DefaultOptions().apply {
                     outbound = TAG_BYPASS

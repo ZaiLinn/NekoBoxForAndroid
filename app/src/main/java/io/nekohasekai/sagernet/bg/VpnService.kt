@@ -38,6 +38,8 @@ class VpnService : BaseVpnService(),
     override var upstreamInterfaceName: String? = null
 
     override suspend fun startProcesses() {
+        // leftover transparent proxy rules (e.g. after a crash) would break the VPN
+        onIoDispatcher { Transproxy.cleanup() }
         DataStore.vpnService = this
         super.startProcesses() // launch proxy instance
     }

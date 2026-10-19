@@ -15,6 +15,7 @@ import io.nekohasekai.sagernet.fmt.trojan_go.parseTrojanGo
 import io.nekohasekai.sagernet.fmt.tuic.TuicBean
 import io.nekohasekai.sagernet.fmt.v2ray.StandardV2RayBean
 import io.nekohasekai.sagernet.fmt.v2ray.VMessBean
+import io.nekohasekai.sagernet.fmt.v2ray.echConfigToPem
 import io.nekohasekai.sagernet.fmt.v2ray.isTLS
 import io.nekohasekai.sagernet.fmt.v2ray.setTLS
 import io.nekohasekai.sagernet.fmt.wireguard.WireGuardBean
@@ -483,6 +484,10 @@ object RawUpdater : GroupUpdater() {
                                             when (echOpt.key) {
                                                 "enable" -> bean.enableECH =
                                                     echOpt.value.toString() == "true"
+
+                                                // base64 ECHConfigList, converted to the PEM sing-box expects
+                                                "config" -> bean.echConfig =
+                                                    echConfigToPem(echOpt.value?.toString())
                                             }
                                         }
                                     }

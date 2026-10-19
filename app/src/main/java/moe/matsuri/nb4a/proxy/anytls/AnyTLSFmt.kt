@@ -1,5 +1,6 @@
 package moe.matsuri.nb4a.proxy.anytls
 
+import io.nekohasekai.sagernet.fmt.v2ray.echConfigToPem
 import io.nekohasekai.sagernet.ktx.blankAsNull
 import io.nekohasekai.sagernet.ktx.linkBuilder
 import io.nekohasekai.sagernet.ktx.toLink
@@ -29,7 +30,7 @@ fun buildSingBoxOutboundAnyTLSBean(bean: AnyTLSBean): SingBoxOptions.Outbound_An
                     fingerprint = it
                 }
             }
-            bean.echConfig.blankAsNull()?.let {
+            echConfigToPem(bean.echConfig).blankAsNull()?.let {
                 // In new version, some complex options will be deprecated, so we just do this.
                 ech = SingBoxOptions.OutboundECHOptions().apply {
                     enabled = true

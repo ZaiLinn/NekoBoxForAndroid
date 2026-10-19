@@ -56,10 +56,11 @@ class ProxyInstance(profile: ProxyEntity, var service: BaseService.Interface? = 
     }
 
     override fun close() {
-        super.close()
+        // stop the looper first, so it can read the final traffic before the box is closed
         runBlocking {
             looper?.stop()
             looper = null
         }
+        super.close()
     }
 }

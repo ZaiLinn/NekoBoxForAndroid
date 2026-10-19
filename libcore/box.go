@@ -102,6 +102,7 @@ func NewSingBoxInstance(config string, localTransport LocalDNSTransport) (b *Box
 	var options option.Options
 	err = options.UnmarshalJSONContext(ctx, []byte(config))
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("decode config: %v", err)
 	}
 

@@ -4,7 +4,10 @@ import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Intent
 import android.os.PowerManager
+import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.SagerNet
+import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.ktx.onIoDispatcher
 
 class ProxyService : Service(), BaseService.Interface {
     override val data = BaseService.Data(this)
@@ -19,6 +22,20 @@ class ProxyService : Service(), BaseService.Interface {
     override fun acquireWakeLock() {
         wakeLock = SagerNet.power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "sagernet:proxy")
             .apply { acquire() }
+    }
+
+    override suspend fun startProcesses() {
+        // remove leftover rules (e.g. after a crash) before anything else
+        onIoDispatcher { Transproxy.cleanup() }
+        super.startProcesses()
+        // root transparent proxy: hev-socks5-tunnel forwards the captured traffic to the mixed inbound
+        if (DataStore.serviceMode == Key.MODE_TRANS) onIoDispatcher { Transproxy.start() }
+    }
+
+    override fun killProcesses() {
+        // restore normal networking before the core goes away
+        Transproxy.cleanup()
+        super.killProcesses()
     }
 
     override fun onBind(intent: Intent) = super.onBind(intent)
