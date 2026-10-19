@@ -4547,9 +4547,9 @@ public class SingBoxOptions {
 
         public Map<String, String> headers;
 
-        public Long idle_timeout;
+        public String idle_timeout;
 
-        public Long ping_timeout;
+        public String ping_timeout;
 
     }
 
@@ -4570,9 +4570,9 @@ public class SingBoxOptions {
 
         public String service_name;
 
-        public Long idle_timeout;
+        public String idle_timeout;
 
-        public Long ping_timeout;
+        public String ping_timeout;
 
         public Boolean permit_without_stream;
 

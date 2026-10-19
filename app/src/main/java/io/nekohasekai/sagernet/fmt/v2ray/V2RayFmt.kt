@@ -520,6 +520,10 @@ fun StandardV2RayBean.toUriVMessVLESSTrojan(isTrojan: Boolean): String {
     return builder.toLink(if (isTrojan) "trojan" else "vless")
 }
 
+// ping an idle HTTP/2 (gRPC / h2) connection after this long, drop it if no reply within timeout
+private const val H2_HEALTH_CHECK_IDLE = "15s"
+private const val H2_HEALTH_CHECK_TIMEOUT = "15s"
+
 fun buildSingBoxOutboundStreamSettings(bean: StandardV2RayBean): V2RayTransportOptions? {
     when (bean.type) {
         "tcp" -> {
@@ -561,6 +565,11 @@ fun buildSingBoxOutboundStreamSettings(bean: StandardV2RayBean): V2RayTransportO
                     host = bean.host.split(",")
                 }
                 path = bean.path.takeIf { it.isNotBlank() } ?: "/"
+                // HTTP/2 shares one connection for all requests, check it is still alive
+                if (bean.isTLS()) {
+                    idle_timeout = H2_HEALTH_CHECK_IDLE
+                    ping_timeout = H2_HEALTH_CHECK_TIMEOUT
+                }
             }
         }
 
@@ -574,6 +583,10 @@ fun buildSingBoxOutboundStreamSettings(bean: StandardV2RayBean): V2RayTransportO
             return V2RayTransportOptions_GRPCOptions().apply {
                 type = "grpc"
                 service_name = bean.path
+                // gRPC shares one HTTP/2 connection for all requests; without health check a dead
+                // connection (NAT timeout, network blip) keeps being reused and every request hangs
+                idle_timeout = H2_HEALTH_CHECK_IDLE
+                ping_timeout = H2_HEALTH_CHECK_TIMEOUT
             }
         }
 
@@ -605,6 +618,11 @@ fun buildSingBoxOutboundTLS(bean: StandardV2RayBean): OutboundTLSOptions? {
                 short_id = bean.realityShortId
             }
             if (fp.isNullOrBlank()) fp = "chrome"
+        }
+        // Go's own TLS ClientHello is easy to identify and gets blocked/reset more often,
+        // use a browser fingerprint by default (ECH profiles keep the previous behavior)
+        if (fp.isNullOrBlank() && !bean.enableECH && (bean is VMessBean || bean is TrojanBean)) {
+            fp = "chrome"
         }
         if (fp.isNotBlank()) {
             utls = OutboundUTLSOptions().apply {
