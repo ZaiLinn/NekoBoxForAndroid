@@ -24,7 +24,12 @@ class NativeInterface : BoxPlatformInterface, NB4AInterface {
     //  libbox interface
 
     override fun autoDetectInterfaceControl(fd: Int) {
-        DataStore.vpnService?.protect(fd)
+        val vpnService = DataStore.vpnService ?: return
+        // an unprotected socket would be routed back into the VPN (routing loop), fail the dial instead
+        if (!vpnService.protect(fd)) {
+            Logs.w("protect failed: fd=$fd")
+            throw Exception("VpnService.protect failed")
+        }
     }
 
     override fun openTun(singTunOptionsJson: String, tunPlatformOptionsJson: String): Long {

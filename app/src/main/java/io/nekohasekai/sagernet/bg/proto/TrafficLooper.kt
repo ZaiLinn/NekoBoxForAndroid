@@ -1,5 +1,6 @@
 package io.nekohasekai.sagernet.bg.proto
 
+import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.aidl.SpeedDisplayData
 import io.nekohasekai.sagernet.aidl.TrafficData
 import io.nekohasekai.sagernet.bg.BaseService
@@ -18,13 +19,16 @@ class TrafficLooper
 ) {
 
     private var job: Job? = null
+    private var trafficUpdater: TrafficUpdater? = null
     private val idMap = mutableMapOf<Long, TrafficUpdater.TrafficLooperData>() // id to 1 data
     private val tagMap = mutableMapOf<String, TrafficUpdater.TrafficLooperData>() // tag to 1 data
 
     suspend fun stop() {
-        job?.cancel()
+        job?.cancelAndJoin()
         // finally traffic post
         if (!DataStore.profileTrafficStatistics) return
+        // collect traffic since the last update (including while polling was paused)
+        runCatching { trafficUpdater?.updateAll() }
         val traffic = mutableMapOf<Long, TrafficData>()
         data.proxy?.config?.trafficMap?.forEach { (_, ents) ->
             for (ent in ents) {
@@ -86,7 +90,6 @@ class TrafficLooper
         val profileTrafficStatistics = DataStore.profileTrafficStatistics
         if (delayMs == 0L) return
 
-        var trafficUpdater: TrafficUpdater? = null
         var proxy: ProxyInstance?
 
         // for display
@@ -99,6 +102,14 @@ class TrafficLooper
                 continue
             }
 
+            // Nobody can see the speed while the screen is off, so skip polling to save battery.
+            // Stats counters are reset on read, so the traffic is still counted on the next update.
+            if (trafficUpdater != null && !SagerNet.power.isInteractive) {
+                delay(delayMs)
+                continue
+            }
+
+            var trafficUpdater = trafficUpdater
             if (trafficUpdater == null) {
                 if (!proxy.isInitialized()) {
                     delay(delayMs)
@@ -131,6 +142,7 @@ class TrafficLooper
                 trafficUpdater = TrafficUpdater(
                     box = proxy.box, items = idMap.values.toList()
                 )
+                this.trafficUpdater = trafficUpdater
                 proxy.box.setV2rayStats(tags.joinToString("\n"))
             }
 

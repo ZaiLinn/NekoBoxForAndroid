@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.*
 import android.widget.Toast
 import io.nekohasekai.sagernet.Action
@@ -33,6 +34,9 @@ class BaseService {
     companion object {
         // reset connections on screen on only if the screen has been off for this long (ms)
         const val SCREEN_OFF_RESET_THRESHOLD = 2 * 60 * 1000L
+
+        // screen on, device idle exit and Wi-Fi reconnect often happen together, reset only once
+        const val WAKE_RESET_DEBOUNCE = 5 * 1000L
     }
 
     enum class State(
@@ -54,6 +58,21 @@ class BaseService {
         var notification: ServiceNotification? = null
         var upstreamNetwork: Network? = null
         var screenOffAt = 0L
+        private var lastResetAt = 0L
+
+        /**
+         * @param force network changed: always reset, connections made on the old network are dead
+         */
+        fun resetConnections(reason: String, force: Boolean) {
+            val now = SystemClock.elapsedRealtime()
+            if (!force && now - lastResetAt < WAKE_RESET_DEBOUNCE) {
+                Logs.d("$reason, skip reset connections (just reset)")
+                return
+            }
+            lastResetAt = now
+            Logs.d("$reason, reset connections")
+            runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
+        }
 
         val receiver = broadcastReceiver { ctx, intent ->
             when (intent.action) {
@@ -67,8 +86,7 @@ class BaseService {
                         } else {
                             proxy?.box?.wake()
                             if (DataStore.wakeResetConnections) {
-                                Logs.d("Device wake from idle, reset connections")
-                                runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
+                                resetConnections("Device wake from idle", false)
                             }
                         }
                     }
@@ -83,8 +101,7 @@ class BaseService {
                     if (offAt > 0L && DataStore.wakeResetConnections &&
                         SystemClock.elapsedRealtime() - offAt >= SCREEN_OFF_RESET_THRESHOLD
                     ) {
-                        Logs.d("Screen on after long screen off, reset connections")
-                        runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
+                        resetConnections("Screen on after long screen off", false)
                     }
                 }
 
@@ -302,6 +319,15 @@ class BaseService {
         var upstreamInterfaceName: String?
 
         suspend fun preInit() {
+            // The listener callback is delivered on the main thread, which is busy starting the
+            // core, so seed the current network now; otherwise local DNS uses the VPN itself.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val active = SagerNet.connectivity.activeNetwork
+                val caps = active?.let { SagerNet.connectivity.getNetworkCapabilities(it) }
+                if (caps != null && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                    SagerNet.underlyingNetwork = active
+                }
+            }
             DefaultNetworkListener.start(this) {
                 if (it == null) {
                     // keep upstreamNetwork, so that a reconnect is detected as a network change
@@ -321,7 +347,7 @@ class BaseService {
                     if (oldNetwork != null && oldNetwork != it) {
                         Logs.d("Network changed: $oldName -> ${link.interfaceName}")
                         if (DataStore.networkChangeResetConnections) {
-                            runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
+                            data.resetConnections("Network changed", true)
                         }
                     }
                 }
