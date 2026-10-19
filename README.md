@@ -31,6 +31,16 @@ A fork of [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid
 - VLESS + Vision 未选数据包编码时使用 xudp，修复所有 UDP（QUIC、游戏等）都不通的问题
 - 修复后台服务的若干崩溃和竞态问题（停止时连接流程未取消、休眠广播导致崩溃等）
 
+### Root 透明代理
+
+设置 → 运行模式 → Root 透明代理。需要 root 权限，不占用系统 VPN：
+
+- 通过 iptables 把 TCP 和 DNS 重定向给内核，支持分应用代理设置
+- 核心不以 root 运行，无法使用 TPROXY，所以 DNS 以外的 UDP 不经过代理；QUIC（UDP 443）会被拒绝，让 App 改用 TCP
+- 内核不支持 IPv6 NAT 时，被代理 App 的 IPv6 流量会被拒绝，避免泄露
+- 透明代理端口默认 9280，DNS 使用端口 + 1
+- 停止服务时自动清除规则；如果 App 被强行结束，规则会在下次启动服务时清除
+
 ### 其他
 
 - 息屏时暂停流量统计轮询，降低耗电

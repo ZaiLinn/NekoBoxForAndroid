@@ -40,6 +40,8 @@ import moe.matsuri.nb4a.utils.listByLineOrComma
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 const val TAG_MIXED = "mixed-in"
+const val TAG_REDIRECT = "redirect-in"
+const val TAG_DNS_IN = "dns-in"
 
 const val TAG_PROXY = "proxy"
 const val TAG_DIRECT = "direct"
@@ -133,6 +135,7 @@ fun buildConfig(
     val domainListDNSDirectForce = mutableListOf<String>()
     val bypassDNSBeans = hashSetOf<AbstractBean>()
     val isVPN = DataStore.serviceMode == Key.MODE_VPN
+    val isTransproxy = DataStore.serviceMode == Key.MODE_TRANS
     val bind = if (!forTest && DataStore.allowAccess) "0.0.0.0" else LOCALHOST
     val remoteDns = DataStore.remoteDns.split("\n")
         .mapNotNull { dns -> dns.trim().takeIf { it.isNotBlank() && !it.startsWith("#") } }
@@ -178,6 +181,8 @@ fun buildConfig(
             servers = mutableListOf()
             rules = mutableListOf()
             independent_cache = true
+            // transparent proxy gets real IPs (no FakeDNS): map them back to domains for routing
+            if (isTransproxy) reverse_mapping = true
         }
 
         fun autoDnsDomainStrategy(s: String): String? {
@@ -233,6 +238,24 @@ fun buildConfig(
                 sniff = needSniff
                 sniff_override_destination = needSniffOverride
             })
+            // root transparent proxy: iptables redirects TCP and DNS here (see bg/Transproxy)
+            if (isTransproxy) for ((suffix, address) in listOf("" to LOCALHOST, "6" to "::1")) {
+                inbounds.add(Inbound_RedirectOptions().apply {
+                    type = "redirect"
+                    tag = TAG_REDIRECT + suffix
+                    listen = address
+                    listen_port = DataStore.transproxyPort
+                    domain_strategy = genDomainStrategy(DataStore.resolveDestination)
+                    sniff = needSniff
+                    sniff_override_destination = needSniffOverride
+                })
+                inbounds.add(Inbound_DirectOptions().apply {
+                    type = "direct"
+                    tag = TAG_DNS_IN + suffix
+                    listen = address
+                    listen_port = DataStore.transproxyPort + 1
+                })
+            }
         }
 
         outbounds = mutableListOf()
@@ -692,6 +715,10 @@ fun buildConfig(
             })
             route.rules.add(0, Rule_DefaultOptions().apply {
                 port = listOf(53)
+                action = "hijack-dns"
+            })
+            if (isTransproxy) route.rules.add(0, Rule_DefaultOptions().apply {
+                inbound = listOf(TAG_DNS_IN, TAG_DNS_IN + "6")
                 action = "hijack-dns"
             })
             if (DataStore.bypassLanInCore) {

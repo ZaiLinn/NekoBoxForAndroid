@@ -55,6 +55,9 @@
     <string name="port_proxy">Proxy Port</string>
     <string name="port_http">HTTP Proxy Port</string>
     <string name="port_transproxy">Transproxy Port</string>
+    <string name="service_mode_transproxy">Root transparent proxy</string>
+    <string name="transproxy_root_required">Root transparent proxy requires root access</string>
+    <string name="transproxy_failed">Failed to set iptables rules: %s</string>
     <string name="cag_route">Route Settings</string>
     <string name="allow_access">Allow Connections from the LAN</string>
     <string name="allow_access_sum">Bind inbound servers to 0.0.0.0</string>

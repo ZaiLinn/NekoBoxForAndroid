@@ -129,9 +129,17 @@ object DataStore : OnPreferenceDataStoreChangeListener {
         get() = getLocalPort(Key.MIXED_PORT, 2080)
         set(value) = saveLocalPort(Key.MIXED_PORT, value)
 
+    // root transparent proxy: TCP on this port, DNS on this port + 1
+    var transproxyPort: Int
+        get() = getLocalPort(Key.TRANSPROXY_PORT, 9280)
+        set(value) = saveLocalPort(Key.TRANSPROXY_PORT, value)
+
     fun initGlobal() {
         if (configurationStore.getString(Key.MIXED_PORT) == null) {
             mixedPort = mixedPort
+        }
+        if (configurationStore.getString(Key.TRANSPROXY_PORT) == null) {
+            transproxyPort = transproxyPort
         }
     }
 
