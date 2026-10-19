@@ -47,6 +47,9 @@ object Transproxy {
     // fallback DNS for hotspot clients when the remote DNS is not a plain IPv4 address
     private const val LAN_DNS = "1.1.1.1"
 
+    private const val PER_USER_RANGE = 100000 // android.os.UserHandle.PER_USER_RANGE
+    private const val DUAL_APP_USER = 999
+
     private val BYPASS_V4 = listOf(
         "0.0.0.0/8", "10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16",
         "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "240.0.0.0/4",
@@ -225,7 +228,10 @@ object Transproxy {
         if (!DataStore.proxyApps) return false to emptySet()
         PackageCache.awaitLoadSync()
         val uids = DataStore.individual.split('\n').filter { it.isNotBlank() }
-            .mapNotNull { PackageCache[it] }.toSortedSet()
+            .mapNotNull { PackageCache[it] }
+            // dual apps (MIUI / HyperOS / ColorOS clones) run as Android user 999 with their own uid
+            .flatMap { listOf(it, DUAL_APP_USER * PER_USER_RANGE + it % PER_USER_RANGE) }
+            .toSortedSet()
         return !DataStore.bypass to uids
     }
 

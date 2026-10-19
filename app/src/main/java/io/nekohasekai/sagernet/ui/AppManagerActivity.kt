@@ -93,8 +93,7 @@ class AppManagerActivity : ThemedActivity() {
 
         override fun onClick(v: View?) {
             if (isProxiedApp(item)) proxiedUids.delete(item.uid) else proxiedUids[item.uid] = true
-            DataStore.individual = apps.filter { isProxiedApp(it) }
-                .joinToString("\n") { it.packageName }
+            saveProxiedApps()
 
             appsAdapter.notifyItemRangeChanged(0, appsAdapter.itemCount, SWITCH)
         }
@@ -176,6 +175,18 @@ class AppManagerActivity : ThemedActivity() {
     }
 
     private fun isProxiedApp(app: ProxiedApp) = proxiedUids[app.uid]
+
+    /**
+     * Save the selection, keeping the entries of apps that are not installed now: they used to be
+     * dropped, so an uninstalled and later reinstalled app lost its setting.
+     */
+    private fun saveProxiedApps() {
+        val listed = apps.mapTo(HashSet()) { it.packageName }
+        val notInstalled = DataStore.individual.lineSequence()
+            .filter { it.isNotBlank() && it !in listed }
+        DataStore.individual = (apps.filter { isProxiedApp(it) }.map { it.packageName } + notInstalled)
+            .joinToString("\n")
+    }
 
     @UiThread
     private fun loadApps() {
@@ -273,8 +284,7 @@ class AppManagerActivity : ThemedActivity() {
                             proxiedUids[app.uid] = true
                         }
                     }
-                    DataStore.individual = apps.filter { isProxiedApp(it) }
-                        .joinToString("\n") { it.packageName }
+                    saveProxiedApps()
                     apps = apps.sortedWith(compareBy({ !isProxiedApp(it) }, { it.name.toString() }))
                     onMainDispatcher {
                         appsAdapter.filter.filter(binding.search.text?.toString() ?: "")
