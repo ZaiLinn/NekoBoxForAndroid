@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Network
 import android.os.*
 import android.widget.Toast
 import io.nekohasekai.sagernet.Action
@@ -28,6 +29,11 @@ import java.net.UnknownHostException
 
 class BaseService {
 
+    companion object {
+        // reset connections on screen on only if the screen has been off for this long (ms)
+        const val SCREEN_OFF_RESET_THRESHOLD = 2 * 60 * 1000L
+    }
+
     enum class State(
         val canStop: Boolean = false,
         val started: Boolean = false,
@@ -45,6 +51,8 @@ class BaseService {
         var state = State.Stopped
         var proxy: ProxyInstance? = null
         var notification: ServiceNotification? = null
+        var upstreamNetwork: Network? = null
+        var screenOffAt = 0L
 
         val receiver = broadcastReceiver { ctx, intent ->
             when (intent.action) {
@@ -58,9 +66,24 @@ class BaseService {
                         } else {
                             proxy?.box?.wake()
                             if (DataStore.wakeResetConnections) {
-                                Libcore.resetAllConnections(true)
+                                Logs.d("Device wake from idle, reset connections")
+                                runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
                             }
                         }
+                    }
+                }
+
+                // Some ROMs cut network of background apps when the screen is off without
+                // entering device idle mode, so connections may be dead after a long screen off.
+                Intent.ACTION_SCREEN_OFF -> screenOffAt = SystemClock.elapsedRealtime()
+                Intent.ACTION_SCREEN_ON -> {
+                    val offAt = screenOffAt
+                    screenOffAt = 0L
+                    if (offAt > 0L && DataStore.wakeResetConnections &&
+                        SystemClock.elapsedRealtime() - offAt >= SCREEN_OFF_RESET_THRESHOLD
+                    ) {
+                        Logs.d("Screen on after long screen off, reset connections")
+                        runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
                     }
                 }
 
@@ -227,6 +250,7 @@ class BaseService {
                 release()
                 wakeLock = null
             }
+            data.upstreamNetwork = null
             runOnDefaultDispatcher {
                 DefaultNetworkListener.stop(this)
             }
@@ -274,18 +298,25 @@ class BaseService {
 
         suspend fun preInit() {
             DefaultNetworkListener.start(this) {
+                if (it == null) {
+                    // keep upstreamNetwork, so that a reconnect is detected as a network change
+                    Logs.d("Network lost: $upstreamInterfaceName")
+                    return@start
+                }
                 SagerNet.connectivity.getLinkProperties(it)?.also { link ->
                     SagerNet.underlyingNetwork = it
                     DataStore.vpnService?.updateUnderlyingNetwork()
                     //
+                    val oldNetwork = data.upstreamNetwork
                     val oldName = upstreamInterfaceName
-                    if (oldName != link.interfaceName) {
-                        upstreamInterfaceName = link.interfaceName
-                    }
-                    if (oldName != null && upstreamInterfaceName != null && oldName != upstreamInterfaceName) {
-                        Logs.d("Network changed: $oldName -> $upstreamInterfaceName")
+                    data.upstreamNetwork = it
+                    upstreamInterfaceName = link.interfaceName
+                    // Compare the network itself instead of the interface name: reconnecting
+                    // to Wi-Fi (e.g. after screen off) keeps "wlan0" but old connections are dead.
+                    if (oldNetwork != null && oldNetwork != it) {
+                        Logs.d("Network changed: $oldName -> ${link.interfaceName}")
                         if (DataStore.networkChangeResetConnections) {
-                            Libcore.resetAllConnections(true)
+                            runOnDefaultDispatcher { Libcore.resetAllConnections(true) }
                         }
                     }
                 }
@@ -335,6 +366,8 @@ class BaseService {
                         addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
                     }
                     addAction(Action.RESET_UPSTREAM_CONNECTIONS)
+                    addAction(Intent.ACTION_SCREEN_ON)
+                    addAction(Intent.ACTION_SCREEN_OFF)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     registerReceiver(

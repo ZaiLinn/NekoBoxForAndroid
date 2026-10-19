@@ -60,7 +60,14 @@ func VersionBox() string {
 
 func ResetAllConnections(system bool) {
 	if system {
-		conntrack.Close()
+		if mainInstance != nil && mainInstance.Box != nil {
+			// close tracked connections, and also let outbounds (mux / QUIC based
+			// protocols such as hysteria2 and tuic) and DNS transports drop their
+			// cached connections, which may be dead after sleep or network change
+			mainInstance.Box.Router().ResetNetwork()
+		} else {
+			conntrack.Close()
+		}
 		log.Println("Reset system connections done")
 	} else {
 		log.Println("TODO: Reset user connections")
