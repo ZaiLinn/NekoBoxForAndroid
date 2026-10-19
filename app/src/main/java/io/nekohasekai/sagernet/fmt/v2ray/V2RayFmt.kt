@@ -184,6 +184,11 @@ fun StandardV2RayBean.parseDuckSoft(url: HttpUrl) {
             url.queryParameter("sid")?.let {
                 realityShortId = it
             }
+            // v2rayN / Xray: ech=<base64 ECHConfigList or DNS query form>
+            url.queryParameter("ech")?.takeIf { it.isNotBlank() }?.let {
+                enableECH = true
+                echConfig = echConfigToPem(it)
+            }
         }
     }
 
@@ -494,6 +499,9 @@ fun StandardV2RayBean.toUriVMessVLESSTrojan(isTrojan: Boolean): String {
                 if (utlsFingerprint.isNotBlank()) {
                     builder.addQueryParameter("fp", utlsFingerprint)
                 }
+                if (enableECH) {
+                    echConfigToBase64(echConfig)?.let { builder.addQueryParameter("ech", it) }
+                }
                 if (realityPubKey.isNotBlank()) {
                     builder.setQueryParameter("security", "reality")
                     builder.addQueryParameter("pbk", realityPubKey)
@@ -518,6 +526,40 @@ fun StandardV2RayBean.toUriVMessVLESSTrojan(isTrojan: Boolean): String {
     }
 
     return builder.toLink(if (isTrojan) "trojan" else "vless")
+}
+
+private const val ECH_PEM_BEGIN = "-----BEGIN ECH CONFIGS-----"
+private const val ECH_PEM_END = "-----END ECH CONFIGS-----"
+
+/**
+ * sing-box only accepts ECH configs in PEM, while share links (v2rayN `ech=`) and Clash
+ * `ech-opts.config` carry a bare base64 ECHConfigList. Xray also allows a DNS query form
+ * ("domain+https://dns/query"), which can't be expressed here: return empty for it, so the core
+ * looks up the HTTPS record of the server name by itself.
+ */
+fun echConfigToPem(value: String?): String {
+    val v = value?.trim().orEmpty()
+    if (v.isEmpty() || v.contains(ECH_PEM_BEGIN)) return v
+    val raw = v.replace(Regex("\\s"), "")
+    if (!raw.matches(Regex("[A-Za-z0-9+/_-]+={0,2}"))) return ""
+    val bytes = try {
+        android.util.Base64.decode(
+            raw.replace('-', '+').replace('_', '/'), android.util.Base64.DEFAULT
+        )
+    } catch (_: IllegalArgumentException) {
+        return ""
+    }
+    if (bytes.isEmpty()) return ""
+    val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+    return "$ECH_PEM_BEGIN\n$b64\n$ECH_PEM_END"
+}
+
+/** For share links: the base64 ECHConfigList inside a PEM config, null if there is none. */
+fun echConfigToBase64(value: String?): String? {
+    val pem = echConfigToPem(value)
+    if (pem.isEmpty()) return null
+    return pem.lines().filter { it.isNotBlank() && !it.startsWith("-----") }
+        .joinToString("").takeIf { it.isNotEmpty() }
 }
 
 // ping an idle HTTP/2 (gRPC / h2) connection after this long, drop it if no reply within timeout
@@ -633,8 +675,8 @@ fun buildSingBoxOutboundTLS(bean: StandardV2RayBean): OutboundTLSOptions? {
         if (bean.enableECH) {
             ech = OutboundECHOptions().apply {
                 enabled = true
-                if (bean.echConfig.isNotBlank()) {
-                    config = bean.echConfig.lines()
+                echConfigToPem(bean.echConfig).takeIf { it.isNotBlank() }?.let {
+                    config = it.lines()
                 }
             }
         }

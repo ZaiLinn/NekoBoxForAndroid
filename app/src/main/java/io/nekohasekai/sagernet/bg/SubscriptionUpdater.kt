@@ -72,7 +72,11 @@ object SubscriptionUpdater {
             if (subscriptions.isNotEmpty()) for (profile in subscriptions) {
                 val subscription = profile.subscription!!
 
-                if (((System.currentTimeMillis() / 1000).toInt() - subscription.lastUpdated) < subscription.autoUpdateDelay * 60) {
+                // The worker period equals the shortest update interval, so a run can land a little
+                // before a subscription is due; without tolerance it would wait a whole extra period.
+                val interval = subscription.autoUpdateDelay * 60
+                val tolerance = minOf(interval / 10, 15 * 60)
+                if (((System.currentTimeMillis() / 1000).toInt() - subscription.lastUpdated) < interval - tolerance) {
                     Logs.d("work: not updating " + profile.displayName())
                     continue
                 }
