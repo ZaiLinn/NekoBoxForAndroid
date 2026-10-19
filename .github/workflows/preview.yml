@@ -99,6 +99,8 @@ jobs:
       - name: Gradle Build
         env:
           BUILD_PLUGIN: none
+          # for the release lookups in buildScript/lib/assets.sh
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
           echo "ndk.dir=${ANDROID_HOME}/ndk/25.0.8775105" >> local.properties
