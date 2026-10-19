@@ -103,140 +103,157 @@ fun String.decodeBase64UrlSafe(): String {
 
 class SubscriptionFoundException(val link: String) : RuntimeException()
 
+/** Why a line of imported text was not imported. */
+enum class ImportSkipReason {
+    /** A link of a supported proxy scheme that failed to parse. */
+    INVALID_PROXY_LINK,
+
+    /** A subscription link next to proxies; a subscription is only added from a link alone. */
+    SUBSCRIPTION_LINK,
+
+    /** An http(s) link that is not an http proxy, such as a web page. */
+    WEB_LINK,
+
+    /** Text that is not a supported link. */
+    UNSUPPORTED,
+}
+
+class ProxyParseResult<T>(
+    val proxies: List<T>,
+    /** Skipped non-blank lines by reason. */
+    val skipped: Map<ImportSkipReason, Int> = emptyMap(),
+) {
+    val skippedCount get() = skipped.values.sum()
+}
+
+sealed class LinkParseResult<out T> {
+    class Proxy<T>(val bean: T) : LinkParseResult<T>()
+    class Skipped(val reason: ImportSkipReason) : LinkParseResult<Nothing>()
+}
+
+class ProxyLinks<T>(
+    val result: ProxyParseResult<T>,
+    /**
+     * The link to add as a subscription, set only when no proxy was found and the text is a
+     * single http(s) link that is not a proxy, or holds exactly one explicit subscription link.
+     */
+    val subscriptionLink: String?,
+)
+
+private fun isExplicitSubscriptionLink(link: String) =
+    link.startsWith("clash://install-config?") || link.startsWith("sn://subscription?")
+
+/**
+ * Parses each link of [text] with [parseLink], once split by spaces and once by lines, and keeps
+ * the split that finds more proxies. A link that fails to parse is skipped and does not stop
+ * the links after it.
+ */
+fun <T> collectProxyLinks(text: String, parseLink: (String) -> LinkParseResult<T>): ProxyLinks<T> {
+    val lines = text.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+
+    fun parseLines(splitBySpace: Boolean): ProxyParseResult<T> {
+        val proxies = ArrayList<T>()
+        val skipped = LinkedHashMap<ImportSkipReason, Int>()
+        for (line in lines) {
+            val links = if (splitBySpace) line.split(' ').filter { it.isNotEmpty() } else listOf(line)
+            val results = links.map(parseLink)
+            val found = results.filterIsInstance<LinkParseResult.Proxy<T>>()
+            if (found.isNotEmpty()) {
+                found.mapTo(proxies) { it.bean }
+                continue
+            }
+            // the most specific reason, the enum is declared in that order
+            val reason = results.filterIsInstance<LinkParseResult.Skipped>().minOf { it.reason }
+            skipped[reason] = (skipped[reason] ?: 0) + 1
+        }
+        return ProxyParseResult(proxies, skipped)
+    }
+
+    val bySpace = parseLines(true)
+    val byLine = parseLines(false)
+    val result = if (bySpace.proxies.size > byLine.proxies.size) bySpace else byLine
+
+    var subscriptionLink: String? = null
+    if (result.proxies.isEmpty()) {
+        val links = lines.flatMap { line -> line.split(' ').filter { it.isNotEmpty() } }
+        val explicit = links.filter(::isExplicitSubscriptionLink)
+        subscriptionLink = when {
+            explicit.size == 1 -> explicit[0]
+            links.size == 1 && (parseLink(links[0]) as? LinkParseResult.Skipped)?.reason == ImportSkipReason.WEB_LINK -> links[0]
+            else -> null
+        }
+    }
+    return ProxyLinks(result, subscriptionLink)
+}
+
+private fun parseProxyLink(link: String): LinkParseResult<AbstractBean> {
+    if (isExplicitSubscriptionLink(link)) {
+        return LinkParseResult.Skipped(ImportSkipReason.SUBSCRIPTION_LINK)
+    }
+
+    val isHttp = link.matches("(http|https)://.*".toRegex())
+    val parser: ((String) -> AbstractBean)? = when {
+        link.startsWith("sn://") -> ::parseUniversal
+        link.startsWith("socks://") || link.startsWith("socks4://") ||
+                link.startsWith("socks4a://") || link.startsWith("socks5://") -> ::parseSOCKS
+
+        isHttp -> ::parseHttp
+        link.startsWith("vmess://") || link.startsWith("vless://") -> ::parseV2Ray
+        link.startsWith("trojan://") -> ::parseTrojan
+        link.startsWith("trojan-go://") -> ::parseTrojanGo
+        link.startsWith("ss://") -> ::parseShadowsocks
+        link.startsWith("naive+") -> ::parseNaive
+        link.startsWith("hysteria://") -> ::parseHysteria1
+        link.startsWith("hysteria2://") || link.startsWith("hy2://") -> ::parseHysteria2
+        link.startsWith("tuic://") -> ::parseTuic
+        link.startsWith("anytls://") -> ::parseAnytls
+        else -> null
+    }
+    if (parser == null) return LinkParseResult.Skipped(ImportSkipReason.UNSUPPORTED)
+
+    Logs.d("Try parse link: $link")
+    return try {
+        LinkParseResult.Proxy(parser(link))
+    } catch (e: Throwable) { // as runCatching did before, a parser may throw an Error
+
+        Logs.w(e)
+        if (isHttp) {
+            LinkParseResult.Skipped(ImportSkipReason.WEB_LINK)
+        } else {
+            LinkParseResult.Skipped(ImportSkipReason.INVALID_PROXY_LINK)
+        }
+    }
+}
+
+/** Wraps an http(s) link so that it can be imported as a subscription. */
+fun toClashSubscriptionLink(link: String): String {
+    return HttpUrl.Builder()
+        .scheme("https")
+        .host("install-config")
+        .addQueryParameter("url", link)
+        .build()
+        .toString()
+        .replaceFirst("https://", "clash://")
+}
+
+/**
+ * Parses the proxy links in [text]. Lines that are not proxies are skipped and counted.
+ *
+ * @throws SubscriptionFoundException if no proxy was found and the text is a subscription link.
+ */
+fun parseProxiesResult(text: String): ProxyParseResult<AbstractBean> {
+    val links = collectProxyLinks(text, ::parseProxyLink)
+    links.subscriptionLink?.let {
+        throw SubscriptionFoundException(
+            if (isExplicitSubscriptionLink(it)) it else toClashSubscriptionLink(it)
+        )
+    }
+    links.result.proxies.forEach { it.initializeDefaultValues() }
+    return links.result
+}
+
 suspend fun parseProxies(text: String): List<AbstractBean> {
-    val links = text.split('\n').flatMap { it.trim().split(' ') }
-    val linksByLine = text.split('\n').map { it.trim() }
-
-    val entities = ArrayList<AbstractBean>()
-    val entitiesByLine = ArrayList<AbstractBean>()
-
-    fun String.parseLink(entities: ArrayList<AbstractBean>) {
-        if (startsWith("clash://install-config?") || startsWith("sn://subscription?")) {
-            throw SubscriptionFoundException(this)
-        }
-
-        if (startsWith("sn://")) {
-            Logs.d("Try parse universal link: $this")
-            runCatching {
-                entities.add(parseUniversal(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("socks://") || startsWith("socks4://") || startsWith("socks4a://") || startsWith(
-                "socks5://"
-            )
-        ) {
-            Logs.d("Try parse socks link: $this")
-            runCatching {
-                entities.add(parseSOCKS(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (matches("(http|https)://.*".toRegex())) {
-            Logs.d("Try parse http link: $this")
-            runCatching {
-                entities.add(parseHttp(this))
-            }.onFailure {
-                Logs.w(it)
-                val clashUrl = HttpUrl.Builder()
-                    .scheme("https")
-                    .host("install-config")
-                    .addQueryParameter("url", this)
-                    .build()
-                    .toString()
-                    .replaceFirst("https://", "clash://")
-                throw (SubscriptionFoundException(clashUrl))
-            }
-        } else if (startsWith("vmess://")) {
-            Logs.d("Try parse v2ray link: $this")
-            runCatching {
-                entities.add(parseV2Ray(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("vless://")) {
-            Logs.d("Try parse vless link: $this")
-            runCatching {
-                entities.add(parseV2Ray(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("trojan://")) {
-            Logs.d("Try parse trojan link: $this")
-            runCatching {
-                entities.add(parseTrojan(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("trojan-go://")) {
-            Logs.d("Try parse trojan-go link: $this")
-            runCatching {
-                entities.add(parseTrojanGo(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("ss://")) {
-            Logs.d("Try parse shadowsocks link: $this")
-            runCatching {
-                entities.add(parseShadowsocks(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("naive+")) {
-            Logs.d("Try parse naive link: $this")
-            runCatching {
-                entities.add(parseNaive(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("hysteria://")) {
-            Logs.d("Try parse hysteria1 link: $this")
-            runCatching {
-                entities.add(parseHysteria1(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("hysteria2://") || startsWith("hy2://")) {
-            Logs.d("Try parse hysteria2 link: $this")
-            runCatching {
-                entities.add(parseHysteria2(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("tuic://")) {
-            Logs.d("Try parse TUIC link: $this")
-            runCatching {
-                entities.add(parseTuic(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        } else if (startsWith("anytls://")) {
-            Logs.d("Try parse anytls link: $this")
-            runCatching {
-                entities.add(parseAnytls(this))
-            }.onFailure {
-                Logs.w(it)
-            }
-        }
-    }
-
-    for (link in links) {
-        link.parseLink(entities)
-    }
-    for (link in linksByLine) {
-        link.parseLink(entitiesByLine)
-    }
-//    var isBadLink = false
-    if (entities.onEach { it.initializeDefaultValues() }.size == entitiesByLine.onEach { it.initializeDefaultValues() }.size) run test@{
-        entities.forEachIndexed { index, bean ->
-            val lineBean = entitiesByLine[index]
-            if (bean == lineBean && bean.displayName() != lineBean.displayName()) {
-//                isBadLink = true
-                return@test
-            }
-        }
-    }
-    return if (entities.size > entitiesByLine.size) entities else entitiesByLine
+    return parseProxiesResult(text).proxies
 }
 
 fun <T : Serializable> T.applyDefaultValues(): T {

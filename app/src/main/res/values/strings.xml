@@ -269,6 +269,14 @@
         <item quantity="one">Added</item>
         <item quantity="other">%d proxies added</item>
     </plurals>
+    <plurals name="import_skipped">
+        <item quantity="one">%d line skipped</item>
+        <item quantity="other">%d lines skipped</item>
+    </plurals>
+    <plurals name="import_failed">
+        <item quantity="one">%d failed to save</item>
+        <item quantity="other">%d failed to save</item>
+    </plurals>
     <string name="undo">Undo</string>
     <string name="insecure">Insecure</string>
     <string name="deprecated">Deprecated</string>
@@ -283,6 +291,8 @@
     <string name="error_title">Error</string>
     <string name="no_proxies_found">No proxies found in the link</string>
     <string name="no_proxies_found_in_subscription">No proxies found in the subscription</string>
+    <string name="subscription_update_suspicious_confirm">This update has %1$d proxies (before: %2$d, links failed to parse: %3$d) and would delete %4$d old proxies. Apply it?</string>
+    <string name="subscription_update_suspicious">Update not applied, it looks incomplete: %1$d proxies (before: %2$d, links failed to parse: %3$d). Old proxies are kept; update manually to apply it.</string>
     <string name="no_proxies_found_in_file">No proxies found in the file</string>
     <string name="no_proxies_found_in_clipboard">No proxies found in the clipboard</string>
     <string name="deduplication">Deduplication</string>
@@ -340,6 +350,7 @@
     <string name="connection_test_refused">Connection refused</string>
     <string name="connection_test_unreachable">Unreachable</string>
     <string name="connection_test_timeout">Timeout</string>
+    <string name="connection_test_no_network">No usable network</string>
     <string name="append_http_proxy">Append HTTP Proxy to VPN</string>
     <string name="append_http_proxy_sum">HTTP proxy will be used directly from (browser/ some
         supported apps), without going through the virtual NIC device (Android 10+)</string>

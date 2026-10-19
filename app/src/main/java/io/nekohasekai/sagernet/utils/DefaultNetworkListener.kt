@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.UnknownHostException
 
 object DefaultNetworkListener {
@@ -33,13 +34,23 @@ object DefaultNetworkListener {
 
     private val networkActor = GlobalScope.actor<NetworkMessage>(Dispatchers.Unconfined) {
         val listeners = mutableMapOf<Any, (Network?) -> Unit>()
+
+        // an exception would end the actor, and with it all network updates of this process
+        fun notify(listener: (Network?) -> Unit, network: Network?) {
+            try {
+                listener(network)
+            } catch (e: Exception) {
+                Logs.w(e)
+            }
+        }
+
         var network: Network? = null
         val pendingRequests = arrayListOf<NetworkMessage.Get>()
         for (message in channel) when (message) {
             is NetworkMessage.Start -> {
                 if (listeners.isEmpty()) register()
                 listeners[message.key] = message.listener
-                if (network != null) message.listener(network)
+                if (network != null) notify(message.listener, network)
             }
             is NetworkMessage.Get -> {
                 check(listeners.isNotEmpty()) { "Getting network without any listeners is not supported" }
@@ -58,16 +69,14 @@ object DefaultNetworkListener {
                 network = message.network
                 pendingRequests.forEach { it.response.complete(message.network) }
                 pendingRequests.clear()
-                listeners.values.forEach { it(network) }
+                listeners.values.forEach { notify(it, network) }
             }
             is NetworkMessage.Update -> if (network == message.network) listeners.values.forEach {
-                it(
-                    network
-                )
+                notify(it, network)
             }
             is NetworkMessage.Lost -> if (network == message.network) {
                 network = null
-                listeners.values.forEach { it(null) }
+                listeners.values.forEach { notify(it, null) }
             }
         }
     }
@@ -75,12 +84,15 @@ object DefaultNetworkListener {
     suspend fun start(key: Any, listener: (Network?) -> Unit) =
         networkActor.send(NetworkMessage.Start(key, listener))
 
-    suspend fun get() = if (fallback) @TargetApi(23) {
+    /**
+     * @throws UnknownHostException if there is no network within [timeoutMs]
+     */
+    suspend fun get(timeoutMs: Long = 10_000L): Network = if (fallback) @TargetApi(23) {
         SagerNet.connectivity.activeNetwork
             ?: throw UnknownHostException() // failed to listen, return current if available
     } else NetworkMessage.Get().run {
         networkActor.send(this)
-        response.await()
+        withTimeoutOrNull(timeoutMs) { response.await() } ?: throw UnknownHostException()
     }
 
     suspend fun stop(key: Any) = networkActor.send(NetworkMessage.Stop(key))
@@ -101,6 +113,7 @@ object DefaultNetworkListener {
     }
 
     private var fallback = false
+    private var registered = false
     private val request = NetworkRequest.Builder().apply {
         addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
@@ -124,6 +137,7 @@ object DefaultNetworkListener {
     private fun register() {
         try {
             fallback = false
+            registered = false
             when (Build.VERSION.SDK_INT) {
                 in 31..Int.MAX_VALUE -> @TargetApi(31) {
                     SagerNet.connectivity.registerBestMatchingNetworkCallback(
@@ -144,11 +158,40 @@ object DefaultNetworkListener {
                     // known bug on API 23: https://stackoverflow.com/a/33509180/2245107
                 }
             }
+            registered = true
         } catch (e: Exception) {
             Logs.w(e)
             fallback = true
+            registerFallback()
         }
     }
 
-    private fun unregister() = SagerNet.connectivity.unregisterNetworkCallback(Callback)
+    /**
+     * Keeps getting network changes after the preferred registration failed (no permission,
+     * too many callbacks). LISTEN reports every matching non-VPN network instead of only the
+     * default one, which is still better than no updates at all.
+     */
+    private fun registerFallback() {
+        try {
+            if (Build.VERSION.SDK_INT >= 26) @TargetApi(26) {
+                SagerNet.connectivity.registerNetworkCallback(request, Callback, mainHandler)
+            } else {
+                SagerNet.connectivity.registerNetworkCallback(request, Callback)
+            }
+            registered = true
+        } catch (e: Exception) {
+            Logs.w(e)
+        }
+    }
+
+    // a callback that was never registered throws IllegalArgumentException here
+    private fun unregister() {
+        if (!registered) return
+        registered = false
+        try {
+            SagerNet.connectivity.unregisterNetworkCallback(Callback)
+        } catch (e: Exception) {
+            Logs.w(e)
+        }
+    }
 }

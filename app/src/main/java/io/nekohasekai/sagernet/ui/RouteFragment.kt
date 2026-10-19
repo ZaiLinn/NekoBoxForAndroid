@@ -176,29 +176,25 @@ class RouteFragment : ToolbarFragment(R.layout.layout_route), Toolbar.OnMenuItem
             return ruleList[position - 1].id
         }
 
-        private val updated = HashSet<RuleEntity>()
+        // keyed by id: RuleEntity is a data class, its hash changes with userOrder
+        private val updated = LinkedHashMap<Long, RuleEntity>()
+
+        // adapter positions, position 0 is the document header
         fun move(from: Int, to: Int) {
-            val first = ruleList[from - 1]
-            var previousOrder = first.userOrder
-            val (step, range) = if (from < to) Pair(1, from - 1 until to - 1) else Pair(-1, to downTo from - 1)
-            for (i in range) {
-                val next = ruleList[i + step]
-                val order = next.userOrder
-                next.userOrder = previousOrder
-                previousOrder = order
-                ruleList[i] = next
-                updated.add(next)
+            val moved = ruleList.moveKeepingOrder(from - 1, to - 1, { it.userOrder }) { rule, order ->
+                rule.userOrder = order
             }
-            first.userOrder = previousOrder
-            ruleList[to - 1] = first
-            updated.add(first)
+            if (moved.isEmpty()) return
+            moved.forEach { updated[it.id] = it }
             notifyItemMoved(from, to)
         }
 
-        fun commitMove() = runOnDefaultDispatcher {
-            if (updated.isNotEmpty()) {
-                SagerDatabase.rulesDao.updateRules(updated.toList())
-                updated.clear()
+        fun commitMove() {
+            if (updated.isEmpty()) return
+            val rules = updated.values.toList()
+            updated.clear()
+            runOnDefaultDispatcher {
+                SagerDatabase.rulesDao.updateRules(rules)
                 needReload()
             }
         }

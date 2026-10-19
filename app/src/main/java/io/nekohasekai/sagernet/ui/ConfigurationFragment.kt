@@ -3,6 +3,7 @@ package io.nekohasekai.sagernet.ui
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
+import android.net.Network
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.OpenableColumns
@@ -19,6 +20,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
 import androidx.appcompat.widget.SearchView
 import androidx.appcompat.widget.Toolbar
@@ -66,6 +68,7 @@ import io.nekohasekai.sagernet.ktx.dp2px
 import io.nekohasekai.sagernet.ktx.getColorAttr
 import io.nekohasekai.sagernet.ktx.getColour
 import io.nekohasekai.sagernet.ktx.isIpAddress
+import io.nekohasekai.sagernet.ktx.moveKeepingOrder
 import io.nekohasekai.sagernet.ktx.onMainDispatcher
 import io.nekohasekai.sagernet.ktx.readableMessage
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
@@ -92,6 +95,7 @@ import io.nekohasekai.sagernet.ui.profile.VMessSettingsActivity
 import io.nekohasekai.sagernet.ui.profile.WireGuardSettingsActivity
 import io.nekohasekai.sagernet.widget.QRCodeDialog
 import io.nekohasekai.sagernet.widget.UndoSnackbarManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -107,11 +111,13 @@ import moe.matsuri.nb4a.proxy.config.ConfigSettingActivity
 import moe.matsuri.nb4a.proxy.shadowtls.ShadowTLSSettingsActivity
 import moe.matsuri.nb4a.ui.ConnectionTestNotification
 import okhttp3.internal.closeQuietly
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
 
@@ -292,6 +298,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     .let(cursor::getString)
                             }
                     val proxies = mutableListOf<AbstractBean>()
+                    var skipped = 0
                     if (fileName != null && fileName.endsWith(".zip")) {
                         // try parse wireguard zip
                         val zip =
@@ -300,8 +307,10 @@ class ConfigurationFragment @JvmOverloads constructor(
                             val entry = zip.nextEntry ?: break
                             if (entry.isDirectory) continue
                             val fileText = zip.bufferedReader().readText()
-                            RawUpdater.parseRaw(fileText, entry.name)
-                                ?.let { pl -> proxies.addAll(pl) }
+                            RawUpdater.parseRawResult(fileText, entry.name)?.let { result ->
+                                proxies.addAll(result.proxies)
+                                skipped += result.skippedCount
+                            }
                             zip.closeEntry()
                         }
                         zip.closeQuietly()
@@ -310,12 +319,16 @@ class ConfigurationFragment @JvmOverloads constructor(
                             requireContext().contentResolver.openInputStream(file)!!.use {
                                 it.bufferedReader().readText()
                             }
-                        RawUpdater.parseRaw(fileText, fileName ?: "")
-                            ?.let { pl -> proxies.addAll(pl) }
+                        RawUpdater.parseRawResult(fileText, fileName ?: "")?.let { result ->
+                            proxies.addAll(result.proxies)
+                            skipped += result.skippedCount
+                        }
                     }
                     if (proxies.isEmpty()) onMainDispatcher {
-                        snackbar(getString(R.string.no_proxies_found_in_file)).show()
-                    } else import(proxies)
+                        snackbar(
+                            getString(R.string.no_proxies_found_in_file) + skippedSummary(skipped)
+                        ).show()
+                    } else import(proxies, skipped)
                 } catch (e: SubscriptionFoundException) {
                     (requireActivity() as MainActivity).importSubscription(e.link.toUri())
                 } catch (e: Exception) {
@@ -327,20 +340,39 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
 
-    suspend fun import(proxies: List<AbstractBean>) {
+    /**
+     * Adds [proxies] to the import group and reports how many were added, skipped while
+     * parsing ([skipped]) and failed to save.
+     */
+    suspend fun import(proxies: List<AbstractBean>, skipped: Int = 0) {
         val targetId = DataStore.selectedGroupForImport()
+        var failed = 0
         for (proxy in proxies) {
-            ProfileManager.createProfile(targetId, proxy)
+            try {
+                ProfileManager.createProfile(targetId, proxy)
+            } catch (e: Exception) {
+                Logs.w(e)
+                failed++
+            }
         }
+        val added = proxies.size - failed
         onMainDispatcher {
             DataStore.editingGroup = targetId
-            snackbar(
-                requireContext().resources.getQuantityString(
-                    R.plurals.added, proxies.size, proxies.size
+            var message = resources.getQuantityString(R.plurals.added, added, added)
+            message += skippedSummary(skipped)
+            if (failed > 0) {
+                message += ", " + resources.getQuantityString(
+                    R.plurals.import_failed, failed, failed
                 )
-            ).show()
+            }
+            snackbar(message).show()
         }
 
+    }
+
+    private fun skippedSummary(skipped: Int): String {
+        if (skipped <= 0) return ""
+        return ", " + resources.getQuantityString(R.plurals.import_skipped, skipped, skipped)
     }
 
     override fun onMenuItemClick(item: MenuItem): Boolean {
@@ -355,10 +387,14 @@ class ConfigurationFragment @JvmOverloads constructor(
                     snackbar(getString(R.string.clipboard_empty)).show()
                 } else runOnDefaultDispatcher {
                     try {
-                        val proxies = RawUpdater.parseRaw(text)
-                        if (proxies.isNullOrEmpty()) onMainDispatcher {
-                            snackbar(getString(R.string.no_proxies_found_in_clipboard)).show()
-                        } else import(proxies)
+                        val result = RawUpdater.parseRawResult(text)
+                        val skipped = result?.skippedCount ?: 0
+                        if (result == null || result.proxies.isEmpty()) onMainDispatcher {
+                            snackbar(
+                                getString(R.string.no_proxies_found_in_clipboard) +
+                                        skippedSummary(skipped)
+                            ).show()
+                        } else import(result.proxies, skipped)
                     } catch (e: SubscriptionFoundException) {
                         (requireActivity() as MainActivity).importSubscription(e.link.toUri())
                     } catch (e: Exception) {
@@ -689,215 +725,228 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     }
 
+    /**
+     * Makes every way [mainJob] ends (finished, failed or cancelled) dismiss the dialog, save the
+     * results once and release the connection test guard held by [token].
+     */
+    private fun TestDialog.attach(
+        dialog: AlertDialog, group: ProxyGroup, token: Any, mainJob: Job,
+    ) {
+        val finished = AtomicBoolean(false)
+        cancel = {
+            if (finished.compareAndSet(false, true)) {
+                dialogStatus.set(2)
+                try {
+                    dialog.dismiss()
+                } catch (e: Exception) {
+                    Logs.w(e)
+                }
+                mainJob.cancel()
+                runOnDefaultDispatcher {
+                    try {
+                        // let the test jobs stop before their results are saved
+                        mainJob.join()
+                        results.forEach {
+                            try {
+                                ProfileManager.updateProfile(it)
+                            } catch (e: Exception) {
+                                Logs.w(e)
+                            }
+                        }
+                        GroupManager.postReload(DataStore.currentGroupId())
+                    } finally {
+                        DataStore.connectionTest.release(token)
+                    }
+                }
+            }
+        }
+        minimize = {
+            dialogStatus.set(1)
+            notification = ConnectionTestNotification(
+                dialog.context,
+                "[${group.displayName()}] ${app.getString(R.string.connection_test)}"
+            )
+            dialog.hide()
+        }
+        mainJob.invokeOnCompletion {
+            runOnMainDispatcher { cancel() }
+        }
+    }
+
+    /**
+     * Resolves [address] for a TCP ping outside the VPN.
+     *
+     * @return the IP address, or null with the error set on [profile].
+     */
+    private fun resolveForPing(profile: ProxyEntity, address: String, network: Network?): String? {
+        if (address.isIpAddress()) return address
+        try {
+            val addresses = network?.getAllByName(address) ?: InetAddress.getAllByName(address)
+            addresses.firstOrNull()?.hostAddress?.let { return it }
+        } catch (ignored: UnknownHostException) {
+        } catch (e: Exception) {
+            Logs.w(e)
+        }
+        profile.status = 2
+        profile.error = app.getString(R.string.connection_test_domain_not_found)
+        return null
+    }
+
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("EXPERIMENTAL_API_USAGE")
     fun pingTest(icmpPing: Boolean) {
-        if (DataStore.runningTest) return else DataStore.runningTest = true
+        val token = DataStore.connectionTest.tryAcquire() ?: return
         val test = TestDialog()
         val dialog = test.builder.show()
-        val testJobs = mutableListOf<Job>()
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).filter {
-                if (icmpPing) {
-                    if (it.requireBean().canICMPing()) {
-                        return@filter true
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).filter {
+                    if (icmpPing) {
+                        if (it.requireBean().canICMPing()) {
+                            return@filter true
+                        }
+                    } else {
+                        if (it.requireBean().canTCPing()) {
+                            return@filter true
+                        }
                     }
-                } else {
-                    if (it.requireBean().canTCPing()) {
-                        return@filter true
-                    }
+                    return@filter false
                 }
-                return@filter false
-            }
-            test.proxyN = profilesList.size
-            val profiles = ConcurrentLinkedQueue(profilesList)
-            repeat(DataStore.connectionTestConcurrent) {
-                testJobs.add(launch(Dispatchers.IO) {
-                    while (isActive) {
-                        val profile = profiles.poll() ?: break
-
-                        profile.status = 0
-                        var address = profile.requireBean().serverAddress
-                        if (!address.isIpAddress()) {
+                test.proxyN = profilesList.size
+                val profiles = ConcurrentLinkedQueue(profilesList)
+                List(DataStore.connectionTestConcurrent) {
+                    launch(Dispatchers.IO) {
+                        while (isActive) {
+                            val profile = profiles.poll() ?: break
                             try {
-                                SagerNet.underlyingNetwork!!.getAllByName(address).apply {
-                                    if (isNotEmpty()) {
-                                        address = this[0].hostAddress
-                                    }
-                                }
-                            } catch (ignored: UnknownHostException) {
+                                pingProfile(profile, icmpPing)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Logs.w(e)
+                                profile.status = 3
+                                profile.error = e.readableMessage
                             }
-                        }
-                        if (!isActive) break
-                        if (!address.isIpAddress()) {
-                            profile.status = 2
-                            profile.error = app.getString(R.string.connection_test_domain_not_found)
-                            test.update(profile)
-                            continue
-                        }
-                        try {
-                            if (icmpPing) {
-                                // removed
-                            } else {
-                                val socket =
-                                    SagerNet.underlyingNetwork?.socketFactory?.createSocket()
-                                        ?: Socket()
-                                try {
-                                    socket.soTimeout = 3000
-                                    socket.bind(InetSocketAddress(0))
-                                    val start = SystemClock.elapsedRealtime()
-                                    socket.connect(
-                                        InetSocketAddress(
-                                            address, profile.requireBean().serverPort
-                                        ), 3000
-                                    )
-                                    if (!isActive) break
-                                    profile.status = 1
-                                    profile.ping = (SystemClock.elapsedRealtime() - start).toInt()
-                                    test.update(profile)
-                                } finally {
-                                    socket.closeQuietly()
-                                }
-                            }
-                        } catch (e: Exception) {
                             if (!isActive) break
-                            val message = e.readableMessage
-
-                            if (icmpPing) {
-                                profile.status = 2
-                                profile.error = getString(R.string.connection_test_unreachable)
-                            } else {
-                                profile.status = 2
-                                when {
-                                    !message.contains("failed:") -> profile.error =
-                                        getString(R.string.connection_test_timeout)
-
-                                    else -> when {
-                                        message.contains("ECONNREFUSED") -> {
-                                            profile.error =
-                                                getString(R.string.connection_test_refused)
-                                        }
-
-                                        message.contains("ENETUNREACH") -> {
-                                            profile.error =
-                                                getString(R.string.connection_test_unreachable)
-                                        }
-
-                                        else -> {
-                                            profile.status = 3
-                                            profile.error = message
-                                        }
-                                    }
-                                }
-                            }
                             test.update(profile)
                         }
                     }
-                })
-            }
-
-            testJobs.joinAll()
-
-            runOnMainDispatcher {
-                test.cancel()
+                }.joinAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logs.w(e)
             }
         }
-        test.cancel = {
-            test.dialogStatus.set(2)
-            dialog.dismiss()
-            runOnDefaultDispatcher {
-                mainJob.cancel()
-                testJobs.forEach { it.cancel() }
-                test.results.forEach {
-                    try {
-                        ProfileManager.updateProfile(it)
-                    } catch (e: Exception) {
-                        Logs.w(e)
+        test.attach(dialog, group, token, mainJob)
+    }
+
+    private fun pingProfile(profile: ProxyEntity, icmpPing: Boolean) {
+        profile.status = 0
+        // Without the underlying network, a socket would go through the VPN and could
+        // "succeed" against the tun interface, so report it instead of testing.
+        val network = SagerNet.underlyingNetwork
+        if (network == null && DataStore.serviceState.started && DataStore.serviceMode == Key.MODE_VPN) {
+            profile.status = 2
+            profile.error = app.getString(R.string.connection_test_no_network)
+            return
+        }
+        val address = resolveForPing(profile, profile.requireBean().serverAddress, network) ?: return
+        try {
+            if (icmpPing) {
+                // removed
+            } else {
+                val socket = network?.socketFactory?.createSocket() ?: Socket()
+                try {
+                    socket.soTimeout = 3000
+                    socket.bind(InetSocketAddress(0))
+                    val start = SystemClock.elapsedRealtime()
+                    socket.connect(
+                        InetSocketAddress(address, profile.requireBean().serverPort), 3000
+                    )
+                    profile.status = 1
+                    profile.ping = (SystemClock.elapsedRealtime() - start).toInt()
+                } finally {
+                    socket.closeQuietly()
+                }
+            }
+        } catch (e: Exception) {
+            val message = e.readableMessage
+
+            if (icmpPing) {
+                profile.status = 2
+                profile.error = app.getString(R.string.connection_test_unreachable)
+            } else {
+                profile.status = 2
+                when {
+                    !message.contains("failed:") -> profile.error =
+                        app.getString(R.string.connection_test_timeout)
+
+                    else -> when {
+                        message.contains("ECONNREFUSED") -> {
+                            profile.error = app.getString(R.string.connection_test_refused)
+                        }
+
+                        message.contains("ENETUNREACH") -> {
+                            profile.error = app.getString(R.string.connection_test_unreachable)
+                        }
+
+                        else -> {
+                            profile.status = 3
+                            profile.error = message
+                        }
                     }
                 }
-                GroupManager.postReload(DataStore.currentGroupId())
-                DataStore.runningTest = false
             }
-        }
-        test.minimize = {
-            test.dialogStatus.set(1)
-            test.notification = ConnectionTestNotification(
-                dialog.context,
-                "[${group.displayName()}] ${getString(R.string.connection_test)}"
-            )
-            dialog.hide()
         }
     }
 
     @OptIn(DelicateCoroutinesApi::class)
     fun urlTest() {
-        if (DataStore.runningTest) return else DataStore.runningTest = true
+        val token = DataStore.connectionTest.tryAcquire() ?: return
         val test = TestDialog()
         val dialog = test.builder.show()
-        val testJobs = mutableListOf<Job>()
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
-            test.proxyN = profilesList.size
-            val profiles = ConcurrentLinkedQueue(profilesList)
-            repeat(DataStore.connectionTestConcurrent) {
-                testJobs.add(launch(Dispatchers.IO) {
-                    val urlTest = UrlTest() // note: this is NOT in bg process
-                    while (isActive) {
-                        val profile = profiles.poll() ?: break
-                        profile.status = 0
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                test.proxyN = profilesList.size
+                val profiles = ConcurrentLinkedQueue(profilesList)
+                List(DataStore.connectionTestConcurrent) {
+                    launch(Dispatchers.IO) {
+                        val urlTest = UrlTest() // note: this is NOT in bg process
+                        while (isActive) {
+                            val profile = profiles.poll() ?: break
+                            profile.status = 0
 
-                        try {
-                            val result = urlTest.doTest(profile)
-                            profile.status = 1
-                            profile.ping = result
-                        } catch (e: PluginManager.PluginNotFoundException) {
-                            profile.status = 2
-                            profile.error = e.readableMessage
-                        } catch (e: Exception) {
-                            profile.status = 3
-                            profile.error = e.readableMessage
+                            try {
+                                val result = urlTest.doTest(profile)
+                                profile.status = 1
+                                profile.ping = result
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: PluginManager.PluginNotFoundException) {
+                                profile.status = 2
+                                profile.error = e.readableMessage
+                            } catch (e: Exception) {
+                                profile.status = 3
+                                profile.error = e.readableMessage
+                            }
+
+                            test.update(profile)
                         }
-
-                        test.update(profile)
                     }
-                })
-            }
-
-            testJobs.joinAll()
-
-            runOnMainDispatcher {
-                test.cancel()
+                }.joinAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logs.w(e)
             }
         }
-        test.cancel = {
-            test.dialogStatus.set(2)
-            dialog.dismiss()
-            runOnDefaultDispatcher {
-                mainJob.cancel()
-                testJobs.forEach { it.cancel() }
-                test.results.forEach {
-                    try {
-                        ProfileManager.updateProfile(it)
-                    } catch (e: Exception) {
-                        Logs.w(e)
-                    }
-                }
-                GroupManager.postReload(DataStore.currentGroupId())
-                DataStore.runningTest = false
-            }
-        }
-        test.minimize = {
-            test.dialogStatus.set(1)
-            test.notification = ConnectionTestNotification(
-                dialog.context,
-                "[${group.displayName()}] ${getString(R.string.connection_test)}"
-            )
-            dialog.hide()
-        }
+        test.attach(dialog, group, token, mainJob)
     }
 
     inner class GroupPagerAdapter : FragmentStateAdapter(this),
@@ -1180,10 +1229,14 @@ class ConfigurationFragment @JvmOverloads constructor(
                         return 0
                     }
 
+                    // Dragging edits the original order, so only allow it where the list shows
+                    // that order; in a sorted or filtered list the item would jump back on reload.
                     override fun getDragDirs(
                         recyclerView: RecyclerView,
                         viewHolder: RecyclerView.ViewHolder,
-                    ) = if (isEnabled) super.getDragDirs(recyclerView, viewHolder) else 0
+                    ) = if (isEnabled && proxyGroup.order == GroupOrder.ORIGIN && adapter?.filtering != true) {
+                        super.getDragDirs(recyclerView, viewHolder)
+                    } else 0
 
                     override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
                     }
@@ -1273,9 +1326,14 @@ class ConfigurationFragment @JvmOverloads constructor(
                 return configurationIdList.size
             }
 
-            private val updated = HashSet<ProxyEntity>()
+            // keyed by id: ProxyEntity is a data class, its hash changes with userOrder
+            private val updated = LinkedHashMap<Long, ProxyEntity>()
+
+            var filtering = false
+                private set
 
             fun filter(name: String) {
+                filtering = name.isNotEmpty()
                 if (name.isEmpty()) {
                     reloadProfiles()
                     return
@@ -1291,28 +1349,22 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
 
             fun move(from: Int, to: Int) {
-                val first = getItemAt(from)
-                var previousOrder = first.userOrder
-                val (step, range) = if (from < to) Pair(1, from until to) else Pair(
-                    -1, to + 1 downTo from
-                )
-                for (i in range) {
-                    val next = getItemAt(i + step)
-                    val order = next.userOrder
-                    next.userOrder = previousOrder
-                    previousOrder = order
-                    configurationIdList[i] = next.id
-                    updated.add(next)
-                }
-                first.userOrder = previousOrder
-                configurationIdList[to] = first.id
-                updated.add(first)
+                val moved = configurationIdList.moveKeepingOrder(
+                    from, to, { getItem(it).userOrder }
+                ) { id, order -> getItem(id).userOrder = order }
+                if (moved.isEmpty()) return
+                moved.forEach { updated[it] = getItem(it) }
                 notifyItemMoved(from, to)
             }
 
-            fun commitMove() = runOnDefaultDispatcher {
-                updated.forEach { SagerDatabase.proxyDao.updateProxy(it) }
+            fun commitMove() {
+                if (updated.isEmpty()) return
+                // snapshot on the main thread, a new drag may start before the write finishes
+                val profiles = updated.values.toList()
                 updated.clear()
+                runOnDefaultDispatcher {
+                    SagerDatabase.proxyDao.updateProxy(profiles)
+                }
             }
 
             fun remove(pos: Int) {
