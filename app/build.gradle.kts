@@ -42,7 +42,7 @@ dependencies {
 
     implementation(fileTree("libs"))
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("androidx.core:core-ktx:1.9.0")
     implementation("androidx.recyclerview:recyclerview:1.3.0")
     implementation("androidx.activity:activity-ktx:1.10.1")
@@ -65,8 +65,8 @@ dependencies {
     implementation("com.blacksquircle.ui:language-base:2.6.0")
     implementation("com.blacksquircle.ui:language-json:2.6.0")
 
-    implementation("com.squareup.okhttp3:okhttp:5.0.0-alpha.3")
-    implementation("org.yaml:snakeyaml:1.30")
+    implementation("com.squareup.okhttp3:okhttp:5.3.2")
+    implementation("org.yaml:snakeyaml:2.7")
     implementation("com.github.daniel-stoneuk:material-about-library:3.2.0-rc01")
     implementation("com.jakewharton:process-phoenix:2.1.2")
     implementation("com.esotericsoftware:kryo:5.2.1")
