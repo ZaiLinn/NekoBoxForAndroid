@@ -8,9 +8,6 @@ on:
       publish:
         description: "Publish: If want ignore"
         required: false
-      play:
-        description: "Play: If want ignore"
-        required: false
 jobs:
   libcore:
     name: Native Build (LibCore)
@@ -60,13 +57,47 @@ jobs:
         with:
           path: ~/.gradle
           key: gradle-oss-${{ hashFiles('**/*.gradle.kts') }}
+      # Signing: use the KEYSTORE_BASE64 / KEYSTORE_PASS / ALIAS_NAME / ALIAS_PASS secrets if set,
+      # otherwise generate a keystore once and keep it in the Actions cache, so later builds
+      # keep the same signature and can be installed over each other.
+      - name: Signing Keystore Cache
+        id: keystore-cache
+        uses: actions/cache@v4
+        with:
+          path: signing/release.keystore
+          key: signing-keystore-v1
+      - name: Prepare Signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          SECRET_KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          SECRET_ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
+          SECRET_ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+            echo "KEYSTORE_PASS=$SECRET_KEYSTORE_PASS" >> $GITHUB_ENV
+            echo "ALIAS_NAME=$SECRET_ALIAS_NAME" >> $GITHUB_ENV
+            echo "ALIAS_PASS=$SECRET_ALIAS_PASS" >> $GITHUB_ENV
+            echo "Using keystore from secrets"
+          else
+            if [ ! -f signing/release.keystore ]; then
+              mkdir -p signing
+              keytool -genkeypair -noprompt -keystore signing/release.keystore \
+                -storepass nekobox-autogen -keypass nekobox-autogen -alias nekobox \
+                -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=NekoBox"
+              echo "::warning::Generated a new signing keystore. Set the KEYSTORE_BASE64 secret to keep a permanent signature."
+            fi
+            cp signing/release.keystore release.keystore
+            echo "KEYSTORE_PASS=nekobox-autogen" >> $GITHUB_ENV
+            echo "ALIAS_NAME=nekobox" >> $GITHUB_ENV
+            echo "ALIAS_PASS=nekobox-autogen" >> $GITHUB_ENV
+          fi
       - name: Gradle Build
         env:
           BUILD_PLUGIN: none
         run: |
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
           echo "ndk.dir=${ANDROID_HOME}/ndk/25.0.8775105" >> local.properties
-          export LOCAL_PROPERTIES="${{ secrets.LOCAL_PROPERTIES }}"
           ./run init action gradle
           ./gradlew app:assembleOssRelease
           APK=$(find app/build/outputs/apk -name '*arm64-v8a*.apk')
@@ -80,6 +111,8 @@ jobs:
     name: Publish Release
     if: github.event.inputs.publish != 'y'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     needs: build
     steps:
       - name: Checkout
@@ -96,42 +129,4 @@ jobs:
           mv ghr*linux_amd64/ghr .
           mkdir apks
           find artifacts -name "*.apk" -exec cp {} apks \;
-          ./ghr -delete -t "${{ github.token }}" -n "${{ github.event.inputs.tag }}" "${{ github.event.inputs.tag }}" apks
-  play:
-    name: Build Play Bundle
-    if: github.event.inputs.play != 'y'
-    runs-on: ubuntu-latest
-    needs:
-      - libcore
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Golang Status
-        run: find buildScript libcore/*.sh | xargs cat | sha1sum > golang_status
-      - name: Libcore Status
-        run: git ls-files libcore | xargs cat | sha1sum > libcore_status
-      - name: LibCore Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            app/libs/libcore.aar
-          key: ${{ hashFiles('.github/workflows/*', 'golang_status', 'libcore_status') }}
-      - name: Gradle cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.gradle
-          key: gradle-play-${{ hashFiles('**/*.gradle.kts') }}
-      - name: Checkout Library
-        run: |
-          git submodule update --init 'app/*'
-      - name: Gradle Build
-        run: |
-          echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          echo "ndk.dir=${ANDROID_HOME}/ndk/25.0.8775105" >> local.properties
-          export LOCAL_PROPERTIES="${{ secrets.LOCAL_PROPERTIES }}"
-          ./run init action gradle
-          ./gradlew bundlePlayRelease
-      - uses: actions/upload-artifact@v3
-        with:
-          name: AAB
-          path: app/build/outputs/bundle/playRelease/app-play-release.aab
+          ./ghr -delete -c "${{ github.sha }}" -t "${{ github.token }}" -n "${{ github.event.inputs.tag }}" "${{ github.event.inputs.tag }}" apks
