@@ -54,6 +54,9 @@ class BaseService {
         var proxy: ProxyInstance? = null
         var notification: ServiceNotification? = null
         var upstreamNetwork: Network? = null
+
+        // a new key per run: the async stop of the last run must not remove this run's listener
+        var networkListenerKey: Any? = null
         var screenOffAt = 0L
         // called from the main thread and, before API 26, the connectivity thread
         private val resetter = ConnectionResetter(
@@ -279,9 +282,12 @@ class BaseService {
                 wakeLock = null
             }
             data.upstreamNetwork = null
-            runOnDefaultDispatcher {
-                DefaultNetworkListener.stop(this)
+            data.networkListenerKey?.let { key ->
+                runOnDefaultDispatcher {
+                    DefaultNetworkListener.stop(key)
+                }
             }
+            data.networkListenerKey = null
         }
 
         fun stopRunner(restart: Boolean = false, msg: String? = null) {
@@ -334,10 +340,18 @@ class BaseService {
                     SagerNet.underlyingNetwork = active
                 }
             }
-            DefaultNetworkListener.start(this) {
+            val key = Any()
+            data.networkListenerKey = key
+            DefaultNetworkListener.start(key) {
+                // a late update for a run that is already stopped
+                if (data.networkListenerKey !== key) return@start
                 if (it == null) {
                     // keep upstreamNetwork, so that a reconnect is detected as a network change
                     Logs.d("Network lost: $upstreamInterfaceName")
+                    // don't report a network that is gone: the VPN follows the default network
+                    // meanwhile, and local DNS fails instead of using a dead network
+                    SagerNet.underlyingNetwork = null
+                    DataStore.vpnService?.updateUnderlyingNetwork()
                     return@start
                 }
                 SagerNet.connectivity.getLinkProperties(it)?.also { link ->

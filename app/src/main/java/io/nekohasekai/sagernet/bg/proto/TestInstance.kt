@@ -8,6 +8,7 @@ import io.nekohasekai.sagernet.fmt.buildConfig
 import io.nekohasekai.sagernet.ktx.Logs
 import io.nekohasekai.sagernet.ktx.app
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
+import io.nekohasekai.sagernet.ktx.runOnIoDispatcher
 import io.nekohasekai.sagernet.ktx.tryResume
 import io.nekohasekai.sagernet.ktx.tryResumeWithException
 import kotlinx.coroutines.delay
@@ -55,8 +56,12 @@ class TestInstance(profile: ProxyEntity, val link: String, private val timeout: 
                     job.cancel()
                     // Only the core: the job still runs close() for plugins and files when the
                     // blocking urlTest returns. BoxInstance.Close is idempotent and locked.
-                    runCatching {
-                        if (isInitialized()) box.close()
+                    // Not here: this runs on the canceller's thread, often the main thread, and
+                    // Close waits for the running test.
+                    runOnIoDispatcher {
+                        runCatching {
+                            if (isInitialized()) box.close()
+                        }
                     }
                 }
             }
