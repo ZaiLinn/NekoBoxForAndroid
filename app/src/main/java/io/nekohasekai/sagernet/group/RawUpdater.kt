@@ -724,7 +724,8 @@ object RawUpdater : GroupUpdater() {
                 }
                 return ProxyParseResult(proxies)
             } catch (e: YAMLException) {
-                Logs.w(e)
+                // the message quotes the failing line, which may be a password
+                Logs.w("Clash YAML parse failed: ${e.javaClass.simpleName}")
             }
         } else if (text.contains("[Interface]")) {
             // wireguard
@@ -735,7 +736,8 @@ object RawUpdater : GroupUpdater() {
                 })
                 return ProxyParseResult(proxies)
             } catch (e: Exception) {
-                Logs.w(e)
+                // the message may quote the config, which holds the private key
+                Logs.w("WireGuard config parse failed: ${e.javaClass.simpleName}")
             }
         }
 

@@ -186,6 +186,22 @@ fun <T> collectProxyLinks(text: String, parseLink: (String) -> LinkParseResult<T
     return ProxyLinks(result, subscriptionLink)
 }
 
+/**
+ * The scheme of [link], safe to log. The rest of a proxy link may hold user names, passwords,
+ * UUIDs or keys, so never log the link itself or a parser's message, which often repeats it.
+ */
+fun linkSchemeForLog(link: String): String {
+    val scheme = link.substringBefore("://", "")
+    return if (scheme.isNotEmpty() && scheme.length <= 16 && scheme.all { it.isLetterOrDigit() || it in "+-." }) {
+        scheme
+    } else {
+        "unknown"
+    }
+}
+
+fun linkParseFailureLog(link: String, e: Throwable) =
+    "Failed to parse ${linkSchemeForLog(link)} link: ${e.javaClass.simpleName}"
+
 private fun parseProxyLink(link: String): LinkParseResult<AbstractBean> {
     if (isExplicitSubscriptionLink(link)) {
         return LinkParseResult.Skipped(ImportSkipReason.SUBSCRIPTION_LINK)
@@ -211,12 +227,10 @@ private fun parseProxyLink(link: String): LinkParseResult<AbstractBean> {
     }
     if (parser == null) return LinkParseResult.Skipped(ImportSkipReason.UNSUPPORTED)
 
-    Logs.d("Try parse link: $link")
     return try {
         LinkParseResult.Proxy(parser(link))
     } catch (e: Throwable) { // as runCatching did before, a parser may throw an Error
-
-        Logs.w(e)
+        Logs.w(linkParseFailureLog(link, e))
         if (isHttp) {
             LinkParseResult.Skipped(ImportSkipReason.WEB_LINK)
         } else {

@@ -235,6 +235,25 @@
             app:key="wakeResetConnections"
             app:title="@string/wake_reset_connections"
             app:useSimpleSummaryProvider="true" />
+        <moe.matsuri.nb4a.ui.SimpleMenuPreference
+            app:defaultValue="120"
+            app:dependency="wakeResetConnections"
+            app:entries="@array/screen_off_reset_entries"
+            app:entryValues="@array/screen_off_reset_values"
+            app:key="screenOffResetSeconds"
+            app:title="@string/screen_off_reset_seconds"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreference
+            app:defaultValue="false"
+            app:dependency="networkChangeResetConnections"
+            app:key="keepQuicOnNetworkChange"
+            app:summary="@string/keep_quic_on_network_change_sum"
+            app:title="@string/keep_quic_on_network_change" />
+        <SwitchPreference
+            app:defaultValue="false"
+            app:key="pauseCoreInDoze"
+            app:summary="@string/pause_core_in_doze_sum"
+            app:title="@string/pause_core_in_doze" />
         <SwitchPreference
             app:icon="@drawable/ic_action_lock_open"
             app:key="globalAllowInsecure"

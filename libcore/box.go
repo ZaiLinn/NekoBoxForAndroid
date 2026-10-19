@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/matsuridayo/libneko/protect_server"
 	"github.com/matsuridayo/libneko/speedtest"
@@ -100,6 +101,37 @@ type BoxInstance struct {
 	v2api        *boxapi.SbV2rayServer
 	selector     *group.Selector
 	pauseManager pause.Manager
+
+	// users counts the URL tests running on this instance, so that Close does not close the
+	// box under them. Guarded by usersAccess, not access, so a test never blocks on Close.
+	usersAccess sync.Mutex
+	users       int
+	closing     bool
+	usersDone   chan struct{}
+}
+
+// closeWaitTimeout bounds how long Close waits for running URL tests.
+var closeWaitTimeout = 2 * time.Second
+
+// acquire marks a use of the instance; it fails once Close has started. Call release after.
+func (b *BoxInstance) acquire() bool {
+	b.usersAccess.Lock()
+	defer b.usersAccess.Unlock()
+	if b.closing {
+		return false
+	}
+	b.users++
+	return true
+}
+
+func (b *BoxInstance) release() {
+	b.usersAccess.Lock()
+	defer b.usersAccess.Unlock()
+	b.users--
+	if b.users == 0 && b.usersDone != nil {
+		close(b.usersDone)
+		b.usersDone = nil
+	}
 }
 
 func NewSingBoxInstance(config string, localTransport LocalDNSTransport) (b *BoxInstance, err error) {
@@ -174,6 +206,16 @@ func (b *BoxInstance) Close() (err error) {
 	}
 	b.state = 2
 
+	// no new users from now on; wait for the running ones below
+	b.usersAccess.Lock()
+	b.closing = true
+	var usersDone chan struct{}
+	if b.users > 0 {
+		usersDone = make(chan struct{})
+		b.usersDone = usersDone
+	}
+	b.usersAccess.Unlock()
+
 	// clear main instance
 	mainInstanceAccess.Lock()
 	if mainInstance == b {
@@ -186,6 +228,13 @@ func (b *BoxInstance) Close() (err error) {
 	if b.cancel != nil {
 		b.cancel()
 	}
+	if usersDone != nil {
+		select {
+		case <-usersDone:
+		case <-time.After(closeWaitTimeout):
+			log.Println("box.Close: URL tests still running, closing anyway")
+		}
+	}
 	if b.Box != nil {
 		b.Box.Close()
 	}
@@ -193,15 +242,23 @@ func (b *BoxInstance) Close() (err error) {
 	return nil
 }
 
+// Sleep and Wake come from the idle broadcast, which may race with Close. A panic here would
+// crash the app through JNI, so only act on a started instance and recover.
 func (b *BoxInstance) Sleep() {
-	if b.pauseManager != nil {
+	b.access.Lock()
+	defer b.access.Unlock()
+	defer device.DeferPanicToError("box.Sleep", func(err error) { log.Println(err) })
+	if b.state == 1 && b.pauseManager != nil {
 		b.pauseManager.DevicePause()
 	}
 	// _ = b.Box.Router().ResetNetwork()
 }
 
 func (b *BoxInstance) Wake() {
-	if b.pauseManager != nil {
+	b.access.Lock()
+	defer b.access.Unlock()
+	defer device.DeferPanicToError("box.Wake", func(err error) { log.Println(err) })
+	if b.state == 1 && b.pauseManager != nil {
 		b.pauseManager.DeviceWake()
 	}
 }
@@ -246,6 +303,10 @@ func UrlTest(i *BoxInstance, link string, timeout int32) (latency int32, err err
 	var connectionTracker adapter.ConnectionTracker
 	// test i
 	if i != nil {
+		if !i.acquire() {
+			return 0, errors.New("instance closed")
+		}
+		defer i.release()
 		if i.v2api != nil {
 			connectionTracker = i.v2api.StatsService()
 		}
@@ -257,6 +318,11 @@ func UrlTest(i *BoxInstance, link string, timeout int32) (latency int32, err err
 	if main == nil {
 		return speedtest.UrlTest(boxapi.CreateProxyHttpClient(nil, nil), link, timeout, speedtest.UrlTestStandard_RTT)
 	}
+	// the instance may have been closed after it was read; keep it open until the test ends
+	if !main.acquire() {
+		return 0, errors.New("instance closed")
+	}
+	defer main.release()
 	// test mainInstance
 	if main.v2api != nil {
 		connectionTracker = main.v2api.StatsService()

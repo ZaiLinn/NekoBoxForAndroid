@@ -32,9 +32,6 @@ import java.util.concurrent.ConcurrentHashMap
 class BaseService {
 
     companion object {
-        // reset connections on screen on only if the screen has been off for this long (ms)
-        const val SCREEN_OFF_RESET_THRESHOLD = 2 * 60 * 1000L
-
         // screen on, device idle exit and Wi-Fi reconnect often happen together, reset only once
         const val WAKE_RESET_DEBOUNCE = 5 * 1000L
     }
@@ -85,8 +82,13 @@ class BaseService {
                 // Action.SWITCH_WAKE_LOCK -> runOnDefaultDispatcher { service.switchWakeLock() }
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        // Pausing the core takes WireGuard down and stops timers for all of Doze,
+                        // which drops push connections, so it is opt-in. wake() is still sent:
+                        // the setting may have changed while idle, and Wake is a no-op if not paused.
                         if (SagerNet.power.isDeviceIdleMode) {
-                            proxy?.takeIf { it.isInitialized() }?.box?.sleep()
+                            if (DataStore.pauseCoreInDoze) {
+                                proxy?.takeIf { it.isInitialized() }?.box?.sleep()
+                            }
                         } else {
                             proxy?.takeIf { it.isInitialized() }?.box?.wake()
                             if (DataStore.wakeResetConnections) {
@@ -103,7 +105,7 @@ class BaseService {
                     val offAt = screenOffAt
                     screenOffAt = 0L
                     if (offAt > 0L && DataStore.wakeResetConnections &&
-                        SystemClock.elapsedRealtime() - offAt >= SCREEN_OFF_RESET_THRESHOLD
+                        SystemClock.elapsedRealtime() - offAt >= DataStore.screenOffResetSeconds * 1000L
                     ) {
                         resetConnections("Screen on after long screen off", false)
                     }
@@ -351,10 +353,19 @@ class BaseService {
                     if (oldNetwork != null && oldNetwork != it) {
                         Logs.d("Network changed: $oldName -> ${link.interfaceName}")
                         if (DataStore.networkChangeResetConnections) {
-                            data.resetConnections("Network changed", true)
+                            if (DataStore.keepQuicOnNetworkChange && data.proxy?.usesQuic() == true) {
+                                // QUIC migrates to the new network by itself; a reset would close it
+                                Logs.d("Network changed, keep connections of QUIC proxy")
+                            } else {
+                                data.resetConnections("Network changed", true)
+                            }
                         }
                     }
                 }
+            }
+            if (!DefaultNetworkListener.listening) {
+                // the listener retries; until then a network change does not reset connections
+                Logs.w("Network changes are not monitored, connections are not reset on network change")
             }
         }
 

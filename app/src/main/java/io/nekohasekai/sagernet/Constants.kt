@@ -49,6 +49,9 @@ object Key {
 
     const val NETWORK_CHANGE_RESET_CONNECTIONS = "networkChangeResetConnections"
     const val WAKE_RESET_CONNECTIONS = "wakeResetConnections"
+    const val SCREEN_OFF_RESET_SECONDS = "screenOffResetSeconds"
+    const val PAUSE_CORE_IN_DOZE = "pauseCoreInDoze"
+    const val KEEP_QUIC_ON_NETWORK_CHANGE = "keepQuicOnNetworkChange"
     const val RULES_PROVIDER = "rulesProvider"
     const val LOG_LEVEL = "logLevel"
     const val LOG_BUF_SIZE = "logBufSize"
