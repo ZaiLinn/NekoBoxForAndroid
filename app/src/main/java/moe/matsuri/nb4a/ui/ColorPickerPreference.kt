@@ -86,12 +86,11 @@ class ColorPickerPreference
             columnCount = 4
 
             val colors = context.resources.getIntArray(R.array.material_colors)
-            var i = 0
+            // the theme of each swatch, see Theme.kt
+            val themeIds = context.resources.getIntArray(R.array.theme_ids)
 
-            for (color in colors) {
-                i++ //Theme.kt
-
-                val themeId = i
+            for ((index, color) in colors.withIndex()) {
+                val themeId = themeIds[index]
                 val view = getNekoImageViewAtColor(color, 64, 0).apply {
                     setOnClickListener {
                         persistInt(themeId)

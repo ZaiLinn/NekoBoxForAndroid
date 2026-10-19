@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- follow the system, night: darker bars, light accent -->
+    <color name="theme_system_primary">@android:color/system_accent1_800</color>
+    <color name="theme_system_accent">@android:color/system_accent1_200</color>
+</resources>

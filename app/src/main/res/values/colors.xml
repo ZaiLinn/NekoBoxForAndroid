@@ -1,30 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- theme picker: swatches and the matching ids in Theme.kt, in the same order -->
     <integer-array name="material_colors">
-        <item>@color/material_red_500</item>
-        <item>@color/color_pink_ssr</item>
-        <item>@color/material_pink_500</item>
-        <item>@color/material_purple_500</item>
-        <item>@color/material_deep_purple_500</item>
-        <item>@color/material_indigo_500</item>
-        <item>@color/material_blue_500</item>
-        <item>@color/material_light_blue_500</item>
-        <item>@color/material_cyan_500</item>
-        <item>@color/material_teal_500</item>
-        <item>@color/material_green_500</item>
-
-        <item>@color/material_light_green_500</item>
-        <item>@color/material_lime_500</item>
-        <item>@color/material_yellow_500</item>
-        <item>@color/material_amber_500</item>
-        <item>@color/material_orange_500</item>
-        <item>@color/material_deep_orange_500</item>
-
-        <item>@color/material_brown_500</item>
-        <item>@color/material_grey_500</item>
-        <item>@color/material_blue_grey_500</item>
-        <item>@color/material_light_black</item>
+        <item>@color/theme_system_primary</item>
+        <item>@color/theme_graphite_primary</item>
+        <item>@color/theme_mist_primary</item>
+        <item>@color/theme_sage_primary</item>
+        <item>@color/theme_oat_primary</item>
+        <item>@color/theme_ink_primary</item>
+        <item>@color/theme_rose_primary</item>
+        <item>@color/color_mono_swatch</item>
+    </integer-array>
+    <integer-array name="theme_ids">
+        <item>23</item>
+        <item>24</item>
+        <item>25</item>
+        <item>26</item>
+        <item>27</item>
+        <item>28</item>
+        <item>29</item>
+        <item>22</item>
     </integer-array>
 
     <color name="material_amber_100">#FFECB3</color>
@@ -288,6 +284,38 @@
     <color name="color_ng_black_accent">#9E9E9E</color>
     <color name="color_ng_black_primary">#2B2B2B</color>
 
+    <!-- monochrome theme: black bars; black accents on light, white accents on dark (values-night) -->
+    <color name="color_mono_swatch">#000000</color>
+    <color name="color_mono_primary">#000000</color>
+    <color name="color_mono_accent">#000000</color>
+    <color name="color_mono_fab">#000000</color>
+    <color name="color_mono_progress">#9E9E9E</color>
+    <color name="color_mono_nav_selected">#E0E0E0</color>
+
     <color name="preference_simple_menu_background">#FAFAFA</color>
 
+
+    <!-- theme palettes: primary (bars), accent (light mode; values-night has the night one), tint -->
+    <color name="theme_graphite_primary">#3C4043</color>
+    <color name="theme_graphite_accent">#5F6368</color>
+    <color name="theme_graphite_tint">#BDC1C6</color>
+    <color name="theme_mist_primary">#4A5A6A</color>
+    <color name="theme_mist_accent">#5C7186</color>
+    <color name="theme_mist_tint">#A7B9CA</color>
+    <color name="theme_sage_primary">#5F7161</color>
+    <color name="theme_sage_accent">#627A64</color>
+    <color name="theme_sage_tint">#B3C7B4</color>
+    <color name="theme_oat_primary">#6B625A</color>
+    <color name="theme_oat_accent">#7A6F65</color>
+    <color name="theme_oat_tint">#CFC3B6</color>
+    <color name="theme_ink_primary">#2C3E50</color>
+    <color name="theme_ink_accent">#46627E</color>
+    <color name="theme_ink_tint">#9DB4CB</color>
+    <color name="theme_rose_primary">#7D6266</color>
+    <color name="theme_rose_accent">#866A6E</color>
+    <color name="theme_rose_tint">#D6BCC0</color>
+    <!-- follow the system: mist blue before Android 12 -->
+    <color name="theme_system_primary">@color/theme_mist_primary</color>
+    <color name="theme_system_accent">@color/theme_mist_accent</color>
+    <color name="theme_system_tint">@color/theme_mist_tint</color>
 </resources>

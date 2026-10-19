@@ -34,6 +34,13 @@ import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.error.YAMLException
 import java.io.StringReader
 import androidx.core.net.toUri
+import io.nekohasekai.sagernet.SagerNet
+import okhttp3.Credentials
+import okhttp3.Dns
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 @Suppress("EXPERIMENTAL_API_USAGE")
 object RawUpdater : GroupUpdater() {
@@ -57,28 +64,47 @@ object RawUpdater : GroupUpdater() {
                 ?: error(app.getString(R.string.no_proxies_found_in_subscription))
         } else {
 
-            val response = Libcore.newHttpClient().apply {
-                trySocks5(DataStore.mixedPort)
-                tryH3Direct()
-                when (DataStore.appTLSVersion) {
-                    "1.3" -> restrictedTLS()
+            val userAgent = subscription.customUserAgent.takeIf { it.isNotBlank() } ?: USER_AGENT
+            val response = try {
+                val response = Libcore.newHttpClient().apply {
+                    trySocks5(DataStore.mixedPort)
+                    tryH3Direct()
+                    when (DataStore.appTLSVersion) {
+                        "1.3" -> restrictedTLS()
+                    }
+                }.newRequest().apply {
+                    if (DataStore.allowInsecureOnRequest) {
+                        allowInsecure()
+                    }
+                    setURL(subscription.link)
+                    setUserAgent(userAgent)
+                }.execute()
+                SubscriptionResponse(
+                    Util.getStringBox(response.contentString),
+                    Util.getStringBox(response.getHeader("Subscription-Userinfo")),
+                    Util.getStringBox(response.getHeader("content-disposition")),
+                )
+            } catch (e: Exception) {
+                // While the service runs the request goes through the current proxy; when that
+                // proxy is broken the subscription that would fix it can't be updated. Retry
+                // outside of it once. The message may contain the link, so don't log it.
+                if (!DataStore.serviceState.started) throw e
+                Logs.w("Subscription update through the proxy failed (${e.javaClass.simpleName}), retry direct")
+                try {
+                    fetchDirect(subscription.link, userAgent)
+                } catch (direct: Exception) {
+                    e.addSuppressed(direct)
+                    throw e
                 }
-            }.newRequest().apply {
-                if (DataStore.allowInsecureOnRequest) {
-                    allowInsecure()
-                }
-                setURL(subscription.link)
-                setUserAgent(subscription.customUserAgent.takeIf { it.isNotBlank() } ?: USER_AGENT)
-            }.execute()
-            parsed = parseRawResult(Util.getStringBox(response.contentString))
+            }
+            parsed = parseRawResult(response.content)
                 ?: error(app.getString(R.string.no_proxies_found))
 
-            subscription.subscriptionUserinfo =
-                Util.getStringBox(response.getHeader("Subscription-Userinfo"))
+            subscription.subscriptionUserinfo = response.userInfo
 
             // 修改默认名字
             if (proxyGroup.name?.startsWith("Subscription #") == true) {
-                var remoteName = Util.getStringBox(response.getHeader("content-disposition"))
+                var remoteName = response.contentDisposition
                 if (remoteName.isNotBlank()) {
                     remoteName = Util.decodeFilename(remoteName)
                     if (remoteName.isNotBlank()) {
@@ -260,6 +286,45 @@ object RawUpdater : GroupUpdater() {
         userInterface?.onUpdateSuccess(
             proxyGroup, changed, added, updated, deleted, duplicate, byUser
         )
+    }
+
+    private class SubscriptionResponse(
+        val content: String, val userInfo: String, val contentDisposition: String,
+    )
+
+    /**
+     * Fetches [link] on the underlying network, outside of the VPN and the proxy. Uses the
+     * system TLS checks, so "allow insecure" does not apply here.
+     */
+    private fun fetchDirect(link: String, userAgent: String): SubscriptionResponse {
+        val network = SagerNet.underlyingNetwork
+        val client = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .apply {
+                if (network != null) {
+                    socketFactory(network.socketFactory)
+                    dns(object : Dns {
+                        override fun lookup(hostname: String) = network.getAllByName(hostname).toList()
+                    })
+                }
+            }
+            .build()
+        val url = link.toHttpUrl()
+        val request = Request.Builder().url(url).header("User-Agent", userAgent).apply {
+            // as libcore does for user info in the link
+            if (url.username.isNotEmpty()) {
+                header("Authorization", Credentials.basic(url.username, url.password))
+            }
+        }.build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("HTTP ${response.code}")
+            return SubscriptionResponse(
+                response.body?.string() ?: "",
+                response.header("Subscription-Userinfo") ?: "",
+                response.header("content-disposition") ?: "",
+            )
+        }
     }
 
     suspend fun parseRaw(text: String, fileName: String = ""): List<AbstractBean>? {

@@ -62,16 +62,9 @@ class MainActivity : ThemedActivity(),
 
         binding = LayoutMainBinding.inflate(layoutInflater)
         binding.fab.initProgress(binding.fabProgress)
-        if (themeResId !in intArrayOf(
-                R.style.Theme_SagerNet_Black
-            )
-        ) {
-            navigation = binding.navView
-            binding.drawerLayout.removeView(binding.navViewBlack)
-        } else {
-            navigation = binding.navViewBlack
-            binding.drawerLayout.removeView(binding.navView)
-        }
+        // nav_view_black was for the removed black theme
+        navigation = binding.navView
+        binding.drawerLayout.removeView(binding.navViewBlack)
         navigation.setNavigationItemSelectedListener(this)
 
         if (savedInstanceState == null) {

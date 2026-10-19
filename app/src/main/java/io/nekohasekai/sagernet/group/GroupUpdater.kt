@@ -49,44 +49,49 @@ abstract class GroupUpdater {
         }
         val ipv6First = ipv6Mode >= IPv6Mode.PREFER
 
-        for (profile in profiles) {
-            when (profile) {
-                // SNI rewrite unsupported
-                is NaiveBean -> continue
+        // the pool's 5 threads stay alive until it is closed, also when the update is cancelled
+        try {
+            for (profile in profiles) {
+                when (profile) {
+                    // SNI rewrite unsupported
+                    is NaiveBean -> continue
+                }
+
+                if (profile.serverAddress.isIpAddress()) continue
+
+                lookupJobs.add(GlobalScope.launch(lookupPool) {
+                    try {
+                        val results = if (
+                            SagerNet.underlyingNetwork != null &&
+                            DataStore.enableFakeDns &&
+                            DataStore.serviceState.started &&
+                            DataStore.serviceMode == Key.MODE_VPN
+                        ) {
+                            // FakeDNS
+                            SagerNet.underlyingNetwork!!
+                                .getAllByName(profile.serverAddress)
+                                .filterNotNull()
+                        } else {
+                            // System DNS is enough (when VPN connected, it uses v2ray-core)
+                            InetAddress.getAllByName(profile.serverAddress).filterNotNull()
+                        }
+                        if (results.isEmpty()) error("empty response")
+                        rewriteAddress(profile, results, ipv6First)
+                    } catch (e: Exception) {
+                        Logs.d("Lookup ${profile.serverAddress} failed: ${e.readableMessage}", e)
+                    }
+                    if (groupId != null) {
+                        progress.progress++
+                        GroupManager.postReload(groupId)
+                    }
+                })
             }
 
-            if (profile.serverAddress.isIpAddress()) continue
-
-            lookupJobs.add(GlobalScope.launch(lookupPool) {
-                try {
-                    val results = if (
-                        SagerNet.underlyingNetwork != null &&
-                        DataStore.enableFakeDns &&
-                        DataStore.serviceState.started &&
-                        DataStore.serviceMode == Key.MODE_VPN
-                    ) {
-                        // FakeDNS
-                        SagerNet.underlyingNetwork!!
-                            .getAllByName(profile.serverAddress)
-                            .filterNotNull()
-                    } else {
-                        // System DNS is enough (when VPN connected, it uses v2ray-core)
-                        InetAddress.getAllByName(profile.serverAddress).filterNotNull()
-                    }
-                    if (results.isEmpty()) error("empty response")
-                    rewriteAddress(profile, results, ipv6First)
-                } catch (e: Exception) {
-                    Logs.d("Lookup ${profile.serverAddress} failed: ${e.readableMessage}", e)
-                }
-                if (groupId != null) {
-                    progress.progress++
-                    GroupManager.postReload(groupId)
-                }
-            })
+            lookupJobs.joinAll()
+        } finally {
+            lookupJobs.forEach { it.cancel() }
+            lookupPool.close()
         }
-
-        lookupJobs.joinAll()
-        lookupPool.close()
     }
 
     protected fun rewriteAddress(

@@ -76,6 +76,8 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
             }
         }
 
+        // Built off the main thread by the library: the fragment may be detached by then, so use
+        // activityContext for resources, not getString() of the fragment.
         override fun getMaterialAboutList(activityContext: Context): MaterialAboutList {
             return MaterialAboutList.Builder()
                 .addCard(
@@ -100,7 +102,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                         .addItem(
                             MaterialAboutActionItem.Builder()
                                 .icon(R.drawable.ic_baseline_layers_24)
-                                .text(getString(R.string.version_x, "sing-box"))
+                                .text(activityContext.getString(R.string.version_x, "sing-box"))
                                 .subText(Libcore.versionBox())
                                 .setOnClickAction { }
                                 .build())
@@ -115,7 +117,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                                         MaterialAboutActionItem.Builder()
                                             .icon(R.drawable.ic_baseline_nfc_24)
                                             .text(
-                                                getString(
+                                                activityContext.getString(
                                                     R.string.version_x,
                                                     pluginId
                                                 ) + " (${Plugins.displayExeProvider(pkg.packageName)})"
@@ -217,7 +219,8 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                     }
                     runOnMainDispatcher {
                         if (haveUpdate) {
-                            val context = requireContext()
+                            // the user may have left the page while the request ran
+                            val context = context ?: return@runOnMainDispatcher
                             MaterialAlertDialogBuilder(context)
                                 .setTitle(R.string.update_dialog_title)
                                 .setMessage(

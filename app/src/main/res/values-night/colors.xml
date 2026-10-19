@@ -2,4 +2,17 @@
 <resources>
     <color name="fab_color_progress">@color/material_light_white</color>
     <color name="preference_simple_menu_background">#303030</color>
+
+    <!-- monochrome theme, see values/colors.xml -->
+    <color name="color_mono_accent">#FFFFFF</color>
+    <color name="color_mono_fab">#424242</color>
+    <color name="color_mono_nav_selected">#333333</color>
+
+    <!-- theme palettes: lighter accent on dark backgrounds -->
+    <color name="theme_graphite_accent">#BDC1C6</color>
+    <color name="theme_mist_accent">#A7B9CA</color>
+    <color name="theme_sage_accent">#B3C7B4</color>
+    <color name="theme_oat_accent">#CFC3B6</color>
+    <color name="theme_ink_accent">#9DB4CB</color>
+    <color name="theme_rose_accent">#D6BCC0</color>
 </resources>
