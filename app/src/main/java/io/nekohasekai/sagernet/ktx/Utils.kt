@@ -243,7 +243,8 @@ fun Fragment.startFilesForResult(
 fun Fragment.needReload() {
     if (DataStore.serviceState.started) {
         snackbar(getString(R.string.need_reload)).setAction(R.string.apply) {
-            SagerNet.reloadService()
+            // settings changes need a real restart, reload may only switch the selector
+            SagerNet.restartService()
         }.show()
     }
 }

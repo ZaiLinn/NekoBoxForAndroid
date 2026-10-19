@@ -78,6 +78,7 @@ class BaseService {
             when (intent.action) {
                 Intent.ACTION_SHUTDOWN -> service.persistStats()
                 Action.RELOAD -> service.reload()
+                Action.RESTART -> service.restart()
                 // Action.SWITCH_WAKE_LOCK -> runOnDefaultDispatcher { service.switchWakeLock() }
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -245,6 +246,16 @@ class BaseService {
             }
         }
 
+        /** Restart with the current settings (VPN per-app list, inbounds, DNS ... are only applied on start). */
+        fun restart() {
+            val s = data.state
+            when {
+                s == State.Stopped -> startRunner()
+                s.canStop -> stopRunner(true)
+                else -> Logs.w("Illegal state $s when invoking restart")
+            }
+        }
+
         fun canReloadSelector(): Boolean {
             if ((data.proxy?.config?.selectorGroupId ?: -1L) < 0) return false
             val ent = SagerDatabase.proxyDao.getById(DataStore.selectedProxy) ?: return false
@@ -390,6 +401,7 @@ class BaseService {
             if (!data.closeReceiverRegistered) {
                 val filter = IntentFilter().apply {
                     addAction(Action.RELOAD)
+                    addAction(Action.RESTART)
                     addAction(Intent.ACTION_SHUTDOWN)
                     addAction(Action.CLOSE)
                     // addAction(Action.SWITCH_WAKE_LOCK)

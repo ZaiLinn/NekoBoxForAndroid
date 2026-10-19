@@ -197,6 +197,10 @@ class SagerNet : Application(),
         fun reloadService() =
             application.sendBroadcast(Intent(Action.RELOAD).setPackage(application.packageName))
 
+        /** Apply changed settings: unlike [reloadService], never takes the selector shortcut. */
+        fun restartService() =
+            application.sendBroadcast(Intent(Action.RESTART).setPackage(application.packageName))
+
         fun stopService() =
             application.sendBroadcast(Intent(Action.CLOSE).setPackage(application.packageName))
 

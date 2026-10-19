@@ -226,6 +226,7 @@ class AppManagerActivity : ThemedActivity() {
             setHomeAsUpIndicator(R.drawable.ic_navigation_close)
         }
 
+        initialSettings = perAppSettings()
         if (!DataStore.proxyApps) {
             DataStore.proxyApps = true
         }
@@ -405,7 +406,18 @@ class AppManagerActivity : ThemedActivity() {
         if (binding.toolbar.isOverflowMenuShowing) binding.toolbar.hideOverflowMenu() else binding.toolbar.showOverflowMenu()
     } else super.onKeyUp(keyCode, event)
 
+    private var initialSettings: Triple<Boolean, Boolean, String>? = null
+    private fun perAppSettings() = Triple(DataStore.proxyApps, DataStore.bypass, DataStore.individual)
+
     override fun onDestroy() {
+        // The per-app list is handed to the system when the VPN is established, so changes only
+        // take effect after a restart. Apply them right away instead of relying on a snackbar
+        // that is easily missed (and that used to only switch the selector for selector groups).
+        if (isFinishing && initialSettings != null && initialSettings != perAppSettings() &&
+            DataStore.serviceState.canStop
+        ) {
+            SagerNet.restartService()
+        }
         instance = null
         loader?.cancel()
         super.onDestroy()
