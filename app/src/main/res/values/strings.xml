@@ -56,6 +56,8 @@
     <string name="port_http">HTTP Proxy Port</string>
     <string name="port_transproxy">Transproxy Port</string>
     <string name="service_mode_transproxy">Root transparent proxy</string>
+    <string name="root_lan_sharing">LAN / hotspot sharing (root)</string>
+    <string name="root_lan_sharing_sum">Also route devices connected through Wi-Fi hotspot or USB tethering through the proxy</string>
     <string name="transproxy_root_required">Root transparent proxy requires root access</string>
     <string name="transproxy_failed">Failed to set iptables rules: %s</string>
     <string name="cag_route">Route Settings</string>

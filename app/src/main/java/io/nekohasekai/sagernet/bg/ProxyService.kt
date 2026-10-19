@@ -28,10 +28,8 @@ class ProxyService : Service(), BaseService.Interface {
         // remove leftover rules (e.g. after a crash) before anything else
         onIoDispatcher { Transproxy.cleanup() }
         super.startProcesses()
-        if (DataStore.serviceMode == Key.MODE_TRANS) {
-            val port = DataStore.transproxyPort
-            onIoDispatcher { Transproxy.apply(port, port + 1) }
-        }
+        // root transparent proxy: hev-socks5-tunnel forwards the captured traffic to the mixed inbound
+        if (DataStore.serviceMode == Key.MODE_TRANS) onIoDispatcher { Transproxy.start() }
     }
 
     override fun killProcesses() {

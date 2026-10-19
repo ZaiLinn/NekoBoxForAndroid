@@ -38,7 +38,7 @@ object Key {
     const val BYPASS_LAN_IN_CORE = "bypassLanInCore"
 
     const val MIXED_PORT = "mixedPort"
-    const val TRANSPROXY_PORT = "transproxyPort"
+    const val ROOT_LAN_SHARING = "rootLanSharing"
     const val ALLOW_ACCESS = "allowAccess"
     const val SPEED_INTERVAL = "speedInterval"
     const val SHOW_DIRECT_SPEED = "showDirectSpeed"
