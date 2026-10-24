@@ -1,7 +1,7 @@
 # NekoBox Z
 
 [![API](https://img.shields.io/badge/API-21%2B-brightgreen.svg?style=flat)](https://android-arsenal.com/api?level=21)
-[![Releases](https://img.shields.io/github/v/release/ZaiLinn/NekoBoxForAndroid)](https://github.com/ZaiLinn/NekoBoxForAndroid/releases)
+[![Releases](https://img.shields.io/github/v/release/ZaiLinn/NekoBoxZ)](https://github.com/ZaiLinn/NekoBoxZ/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-orange.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 基于 [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) 的修改版，一款使用 sing-box 的 Android 通用代理软件。重点改善息屏、休眠和网络切换后的连接稳定性。
@@ -10,7 +10,7 @@ A fork of [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid
 
 ## 下载 / Downloads
 
-[GitHub Releases](https://github.com/ZaiLinn/NekoBoxForAndroid/releases)
+[GitHub Releases](https://github.com/ZaiLinn/NekoBoxZ/releases)
 
 一般手机选 `arm64-v8a`，很老的 32 位手机选 `armeabi-v7a`，模拟器选 `x86` / `x86_64`。
 
