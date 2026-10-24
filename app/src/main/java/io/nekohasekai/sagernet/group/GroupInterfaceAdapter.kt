@@ -1,6 +1,8 @@
 package io.nekohasekai.sagernet.group
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.GroupManager
 import io.nekohasekai.sagernet.database.ProxyGroup
@@ -8,20 +10,35 @@ import io.nekohasekai.sagernet.ktx.onMainDispatcher
 import io.nekohasekai.sagernet.ktx.runOnMainDispatcher
 import io.nekohasekai.sagernet.ui.ThemedActivity
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 class GroupInterfaceAdapter(val context: ThemedActivity) : GroupManager.Interface {
 
     override suspend fun confirm(message: String): Boolean {
-        return suspendCoroutine {
-            runOnMainDispatcher {
-                MaterialAlertDialogBuilder(context).setTitle(R.string.confirm)
+        return onMainDispatcher {
+            if (context.isFinishing || context.isDestroyed) return@onMainDispatcher false
+            suspendCancellableCoroutine { continuation ->
+                val dialog = MaterialAlertDialogBuilder(context).setTitle(R.string.confirm)
                     .setMessage(message)
-                    .setPositiveButton(R.string.yes) { _, _ -> it.resume(true) }
-                    .setNegativeButton(R.string.no) { _, _ -> it.resume(false) }
-                    .setOnCancelListener { _ -> it.resume(false) }
-                    .show()
+                    .setPositiveButton(R.string.yes) { _, _ ->
+                        if (continuation.isActive) continuation.resume(true)
+                    }
+                    .setNegativeButton(R.string.no) { _, _ ->
+                        if (continuation.isActive) continuation.resume(false)
+                    }
+                    .create()
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_DESTROY) dialog.dismiss()
+                }
+                dialog.setOnDismissListener {
+                    context.lifecycle.removeObserver(observer)
+                    if (continuation.isActive) continuation.resume(false)
+                }
+                dialog.show()
+                context.lifecycle.addObserver(observer)
+                continuation.invokeOnCancellation { runOnMainDispatcher { dialog.dismiss() } }
             }
         }
     }

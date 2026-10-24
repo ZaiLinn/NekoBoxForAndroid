@@ -34,8 +34,8 @@ class MTUPreference
             MaterialAlertDialogBuilder(context).setTitle("MTU")
                 .setView(view)
                 .setPositiveButton(android.R.string.ok) { _, _ ->
-                    val mtu = view.text.toString().toInt()
-                    if (mtu < 1000 || mtu > 10000) return@setPositiveButton
+                    val mtu = view.text.toString().toIntOrNull() ?: return@setPositiveButton
+                    if (mtu !in 1000..65535) return@setPositiveButton
                     value = mtu.toString()
                 }
                 .setNegativeButton(android.R.string.cancel, null)

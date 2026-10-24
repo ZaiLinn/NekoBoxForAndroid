@@ -136,8 +136,8 @@ abstract class GroupUpdater {
         }
 
         suspend fun executeUpdate(proxyGroup: ProxyGroup, byUser: Boolean): Boolean {
-            return coroutineScope {
-                if (!updating.add(proxyGroup.id)) cancel()
+            if (!updating.add(proxyGroup.id)) return false
+            try {
                 GroupManager.postReload(proxyGroup.id)
 
                 val subscription = proxyGroup.subscription!!
@@ -146,29 +146,25 @@ abstract class GroupUpdater {
 
                 if (byUser && (subscription.link?.startsWith("http://") == true || subscription.updateWhenConnectedOnly) && !connected) {
                     if (userInterface == null || !userInterface.confirm(app.getString(R.string.update_subscription_warning))) {
-                        finishUpdate(proxyGroup)
-                        cancel()
-                        return@coroutineScope true
+                        return false
                     }
                 }
 
-                try {
-                    RawUpdater.doUpdate(proxyGroup, subscription, userInterface, byUser)
-                    true
-                } catch (e: Throwable) {
-                    Logs.w(e)
-                    userInterface?.onUpdateFailure(proxyGroup, e.readableMessage)
-                    finishUpdate(proxyGroup)
-                    false
-                }
+                RawUpdater.doUpdate(proxyGroup, subscription, userInterface, byUser)
+                return true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logs.w(e)
+                GroupManager.userInterface?.onUpdateFailure(proxyGroup, e.readableMessage)
+                return false
+            } finally {
+                // Clear the guard even when loading the subscription, a confirmation dialog,
+                // or an update callback fails or is cancelled.
+                updating.remove(proxyGroup.id)
+                progress.remove(proxyGroup.id)
+                withContext(NonCancellable) { GroupManager.postUpdate(proxyGroup) }
             }
-        }
-
-
-        suspend fun finishUpdate(proxyGroup: ProxyGroup) {
-            updating.remove(proxyGroup.id)
-            progress.remove(proxyGroup.id)
-            GroupManager.postUpdate(proxyGroup)
         }
 
     }

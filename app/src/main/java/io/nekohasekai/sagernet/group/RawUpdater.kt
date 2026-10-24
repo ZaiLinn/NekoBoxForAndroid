@@ -294,8 +294,6 @@ object RawUpdater : GroupUpdater() {
             subscription.lastUpdated = oldLastUpdated
             throw e
         }
-        finishUpdate(proxyGroup)
-
         userInterface?.onUpdateSuccess(
             proxyGroup, changed, added, updated, deleted, duplicate, byUser
         )

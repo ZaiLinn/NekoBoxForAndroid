@@ -179,23 +179,27 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(R.layout.layout
     }
 
     fun testProfileAllowed(profile: ProxyEntity): Boolean {
-        if (profile.id == DataStore.editingId) return false
+        // Adding a chain that already reaches the chain being edited creates a cycle.
+        if (testProfileContains(profile, DataStore.editingId)) return false
 
         for (entity in proxyList) {
-            if (testProfileContains(entity, profile)) return false
+            if (testProfileContains(entity, profile.id)) return false
         }
 
         return true
     }
 
-    fun testProfileContains(profile: ProxyEntity, anotherProfile: ProxyEntity): Boolean {
-        if (profile.type != 8 || anotherProfile.type != 8) return false
-        if (profile.id == anotherProfile.id) return true
+    fun testProfileContains(
+        profile: ProxyEntity, targetId: Long, visited: MutableSet<Long> = mutableSetOf()
+    ): Boolean {
+        if (profile.type != ProxyEntity.TYPE_CHAIN) return false
+        if (profile.id == targetId) return true
+        if (!visited.add(profile.id)) return false
         val proxies = profile.chainBean!!.proxies
-        if (proxies.contains(anotherProfile.id)) return true
+        if (proxies.contains(targetId)) return true
         if (proxies.isNotEmpty()) {
             for (entity in ProfileManager.getProfiles(proxies)) {
-                if (testProfileContains(entity, anotherProfile)) {
+                if (testProfileContains(entity, targetId, visited)) {
                     return true
                 }
             }

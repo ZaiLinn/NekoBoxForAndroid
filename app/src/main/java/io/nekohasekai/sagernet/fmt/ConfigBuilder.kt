@@ -83,19 +83,24 @@ fun buildConfig(
     val selectorNames = ArrayList<String>()
     val group = SagerDatabase.groupDao.getById(proxy.groupId)
 
-    fun ProxyEntity.resolveChainInternal(): MutableList<ProxyEntity> {
-        val bean = requireBean()
-        if (bean is ChainBean) {
-            val beans = SagerDatabase.proxyDao.getEntities(bean.proxies)
-            val beansMap = beans.associateBy { it.id }
-            val beanList = ArrayList<ProxyEntity>()
-            for (proxyId in bean.proxies) {
-                val item = beansMap[proxyId] ?: continue
-                beanList.addAll(item.resolveChainInternal())
+    fun ProxyEntity.resolveChainInternal(path: MutableSet<Long> = mutableSetOf()): MutableList<ProxyEntity> {
+        if (!path.add(id)) throw IllegalArgumentException("Circular proxy chain: ${displayName()}")
+        try {
+            val bean = requireBean()
+            if (bean is ChainBean) {
+                val beans = SagerDatabase.proxyDao.getEntities(bean.proxies)
+                val beansMap = beans.associateBy { it.id }
+                val beanList = ArrayList<ProxyEntity>()
+                for (proxyId in bean.proxies) {
+                    val item = beansMap[proxyId] ?: continue
+                    beanList.addAll(item.resolveChainInternal(path))
+                }
+                return beanList.asReversed()
             }
-            return beanList.asReversed()
+            return mutableListOf(this)
+        } finally {
+            path.remove(id)
         }
-        return mutableListOf(this)
     }
 
     fun selectorName(name_: String): String {
