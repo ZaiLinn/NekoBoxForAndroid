@@ -2,6 +2,7 @@ package io.nekohasekai.sagernet.utils
 
 import android.annotation.TargetApi
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -19,7 +20,7 @@ import java.net.UnknownHostException
 
 object DefaultNetworkListener {
     private sealed class NetworkMessage {
-        class Start(val key: Any, val listener: (Network?) -> Unit) : NetworkMessage()
+        class Start(val key: Any, val listener: (Network?, LinkProperties?) -> Unit) : NetworkMessage()
         class Get : NetworkMessage() {
             val response = CompletableDeferred<Network>()
         }
@@ -33,29 +34,34 @@ object DefaultNetworkListener {
         object Retry : NetworkMessage()
 
         class Put(val network: Network) : NetworkMessage()
-        class Update(val network: Network) : NetworkMessage()
+        class Update(val network: Network, val linkProperties: LinkProperties? = null) : NetworkMessage()
         class Lost(val network: Network) : NetworkMessage()
+        object Unavailable : NetworkMessage()
     }
 
     private val networkActor = GlobalScope.actor<NetworkMessage>(Dispatchers.Unconfined) {
-        val listeners = mutableMapOf<Any, (Network?) -> Unit>()
+        val listeners = mutableMapOf<Any, (Network?, LinkProperties?) -> Unit>()
 
         // an exception would end the actor, and with it all network updates of this process
-        fun notify(listener: (Network?) -> Unit, network: Network?) {
+        fun notify(
+            listener: (Network?, LinkProperties?) -> Unit,
+            network: Network?,
+            link: LinkProperties?,
+        ) {
             try {
-                listener(network)
+                listener(network, link)
             } catch (e: Exception) {
                 Logs.w(e)
             }
         }
 
-        var network: Network? = null
+        val networks = NetworkCandidates<Network, LinkProperties>()
         val pendingRequests = PendingRequests<Network>()
         for (message in channel) when (message) {
             is NetworkMessage.Start -> {
                 if (listeners.isEmpty()) register()
                 listeners[message.key] = message.listener
-                if (network != null) notify(message.listener, network)
+                if (networks.current != null) notify(message.listener, networks.current, networks.currentLink)
             }
             is NetworkMessage.Get -> when {
                 // check() here would end the actor
@@ -63,35 +69,42 @@ object DefaultNetworkListener {
                     IllegalStateException("Getting network without any listeners is not supported")
                 )
 
-                network == null -> pendingRequests.add(message.response)
-                else -> message.response.complete(network)
+                networks.current == null -> pendingRequests.add(message.response)
+                else -> message.response.complete(networks.current!!)
             }
             is NetworkMessage.Abandon -> pendingRequests.remove(message.request.response)
             is NetworkMessage.Retry -> if (listeners.isNotEmpty() && !registered) register()
             is NetworkMessage.Stop -> if (listeners.isNotEmpty() && // was not empty
                 listeners.remove(message.key) != null && listeners.isEmpty()
             ) {
-                network = null
+                networks.clear()
                 pendingRequests.failAll(UnknownHostException())
                 unregister()
             }
 
             is NetworkMessage.Put -> {
-                network = message.network
+                networks.onAvailable(message.network, fallback)
                 pendingRequests.completeAll(message.network)
-                listeners.values.forEach { notify(it, network) }
+                listeners.values.forEach { notify(it, networks.current, networks.currentLink) }
             }
-            is NetworkMessage.Update -> if (network == message.network) listeners.values.forEach {
-                notify(it, network)
+            is NetworkMessage.Update -> if (networks.onUpdate(message.network, message.linkProperties)) {
+                listeners.values.forEach { notify(it, networks.current, networks.currentLink) }
             }
-            is NetworkMessage.Lost -> if (network == message.network) {
-                network = null
-                listeners.values.forEach { notify(it, null) }
+            is NetworkMessage.Lost -> if (networks.onLost(message.network)) {
+                listeners.values.forEach { notify(it, networks.current, networks.currentLink) }
+            }
+            is NetworkMessage.Unavailable -> if (listeners.isNotEmpty() && !fallback) {
+                // requestNetwork has released its callback; switch to listening for all matches.
+                registered = false
+                networks.clear()
+                listeners.values.forEach { notify(it, null, null) }
+                fallback = true
+                registerFallback()
             }
         }
     }
 
-    suspend fun start(key: Any, listener: (Network?) -> Unit) =
+    suspend fun start(key: Any, listener: (Network?, LinkProperties?) -> Unit) =
         networkActor.send(NetworkMessage.Start(key, listener))
 
     /**
@@ -126,8 +139,14 @@ object DefaultNetworkListener {
             runBlocking { networkActor.send(NetworkMessage.Update(network)) }
         }
 
+        override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) =
+            runBlocking { networkActor.send(NetworkMessage.Update(network, linkProperties)) }
+
         override fun onLost(network: Network) =
             runBlocking { networkActor.send(NetworkMessage.Lost(network)) }
+
+        override fun onUnavailable() =
+            runBlocking { networkActor.send(NetworkMessage.Unavailable) }
     }
 
     private var fallback = false
@@ -203,6 +222,7 @@ object DefaultNetworkListener {
             }
             registered = true
             retryAttempt = 0
+            Logs.w("Using fallback network callback; tracking all matching networks")
         } catch (e: Exception) {
             Logs.w(e)
             val delay = listenRetryDelayMs(retryAttempt++)

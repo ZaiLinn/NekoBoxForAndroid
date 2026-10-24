@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.LinkProperties
 import android.os.*
 import android.widget.Toast
 import io.nekohasekai.sagernet.Action
@@ -54,6 +55,8 @@ class BaseService {
         var proxy: ProxyInstance? = null
         var notification: ServiceNotification? = null
         var upstreamNetwork: Network? = null
+        var upstreamLinkProperties: LinkProperties? = null
+        var upstreamNetworkLost = false
 
         // a new key per run: the async stop of the last run must not remove this run's listener
         var networkListenerKey: Any? = null
@@ -286,6 +289,10 @@ class BaseService {
                 wakeLock = null
             }
             data.upstreamNetwork = null
+            data.upstreamLinkProperties = null
+            data.upstreamNetworkLost = false
+            upstreamInterfaceName = null
+            SagerNet.underlyingNetwork = null
             data.networkListenerKey?.let { key ->
                 runOnDefaultDispatcher {
                     DefaultNetworkListener.stop(key)
@@ -350,41 +357,49 @@ class BaseService {
                 val caps = active?.let { SagerNet.connectivity.getNetworkCapabilities(it) }
                 if (caps != null && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
                     SagerNet.underlyingNetwork = active
+                    upstreamInterfaceName = SagerNet.connectivity.getLinkProperties(active)?.interfaceName
                 }
             }
             val key = Any()
             data.networkListenerKey = key
-            DefaultNetworkListener.start(key) {
+            DefaultNetworkListener.start(key) { network, link ->
                 // a late update for a run that is already stopped
                 if (data.networkListenerKey !== key) return@start
-                if (it == null) {
+                if (network == null) {
                     // keep upstreamNetwork, so that a reconnect is detected as a network change
                     Logs.d("Network lost: $upstreamInterfaceName")
+                    data.upstreamNetworkLost = true
+                    data.upstreamLinkProperties = null
                     // don't report a network that is gone: the VPN follows the default network
                     // meanwhile, and local DNS fails instead of using a dead network
                     SagerNet.underlyingNetwork = null
                     DataStore.vpnService?.updateUnderlyingNetwork()
                     return@start
                 }
-                SagerNet.connectivity.getLinkProperties(it)?.also { link ->
-                    SagerNet.underlyingNetwork = it
-                    DataStore.vpnService?.updateUnderlyingNetwork()
-                    //
-                    val oldNetwork = data.upstreamNetwork
-                    val oldName = upstreamInterfaceName
-                    data.upstreamNetwork = it
-                    upstreamInterfaceName = link.interfaceName
-                    // Compare the network itself instead of the interface name: reconnecting
-                    // to Wi-Fi (e.g. after screen off) keeps "wlan0" but old connections are dead.
-                    if (oldNetwork != null && oldNetwork != it) {
-                        Logs.d("Network changed: $oldName -> ${link.interfaceName}")
-                        if (DataStore.networkChangeResetConnections) {
-                            if (DataStore.keepQuicOnNetworkChange && data.proxy?.usesQuic() == true) {
-                                // QUIC migrates to the new network by itself; a reset would close it
-                                Logs.d("Network changed, keep connections of QUIC proxy")
-                            } else {
-                                data.resetConnections("Network changed", true)
-                            }
+                // The network is usable before link properties arrive. Android delivers those
+                // separately, and a synchronous getLinkProperties() here may return null.
+                SagerNet.underlyingNetwork = network
+                DataStore.vpnService?.updateUnderlyingNetwork()
+                val oldNetwork = data.upstreamNetwork
+                val oldLink = data.upstreamLinkProperties
+                val oldName = upstreamInterfaceName
+                val wasLost = data.upstreamNetworkLost
+                val linkChanged = oldNetwork == network && oldLink != null &&
+                    link != null && oldLink != link
+                data.upstreamNetwork = network
+                data.upstreamLinkProperties = if (oldNetwork != network) link else link ?: oldLink
+                data.upstreamNetworkLost = false
+                if (link != null) upstreamInterfaceName = link.interfaceName
+                else if (oldNetwork != network) upstreamInterfaceName = null
+                // A network can recover with the same identity, or change routes/DNS in place.
+                if (oldNetwork != null && (wasLost || oldNetwork != network || linkChanged)) {
+                    Logs.d("Network changed: $oldNetwork/$oldName -> $network/$upstreamInterfaceName, link changed: $linkChanged")
+                    if (DataStore.networkChangeResetConnections) {
+                        if (DataStore.keepQuicOnNetworkChange && data.proxy?.usesQuic() == true) {
+                            // QUIC migrates to the new network by itself; a reset would close it
+                            Logs.d("Network changed, keep connections of QUIC proxy")
+                        } else {
+                            data.resetConnections("Network changed", true)
                         }
                     }
                 }

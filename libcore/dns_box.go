@@ -57,12 +57,18 @@ func (p *platformLocalDNSTransport) Close() error {
 func (p *platformLocalDNSTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
 	if p.raw && rawQueryFunc != nil {
 		// Raw - Android 10 及以上才有
+		// NETWORK_UNSPECIFIED (0) is not an underlying network. In VPN mode,
+		// querying it may go back through the VPN and recurse into this transport.
+		networkHandle := p.iif.NetworkHandle()
+		if networkHandle == 0 {
+			return nil, syscall.ENETUNREACH
+		}
 
 		messageBytes, err := message.Pack()
 		if err != nil {
 			return nil, err
 		}
-		msg, err := rawQueryFunc(p.iif.NetworkHandle(), messageBytes)
+		msg, err := rawQueryFunc(networkHandle, messageBytes)
 		if err != nil {
 			return nil, err
 		}
