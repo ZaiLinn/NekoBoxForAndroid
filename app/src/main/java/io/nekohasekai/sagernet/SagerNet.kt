@@ -85,8 +85,9 @@ class SagerNet : Application(),
             // the service process may have died without telling the tile
             TileService.requestUpdate(this)
             runOnDefaultDispatcher {
-                DefaultNetworkListener.start(this) {
-                    underlyingNetwork = it
+                DefaultNetworkListener.start(this) { network, link ->
+                    underlyingNetwork = network
+                    Libcore.updateDefaultInterface(link?.interfaceName ?: "", true)
                 }
 
                 updateNotificationChannels()

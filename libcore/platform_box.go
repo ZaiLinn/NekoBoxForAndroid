@@ -3,10 +3,10 @@ package libcore
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"libcore/procfs"
 	"log"
+	"net"
 	"net/netip"
 	"strings"
 	"syscall"
@@ -14,18 +14,20 @@ import (
 	"github.com/matsuridayo/libneko/neko_log"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/process"
+	"github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/experimental/libbox/platform"
 	sblog "github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	tun "github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing/common/control"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
 	N "github.com/sagernet/sing/common/network"
 )
 
-var boxPlatformInterfaceInstance platform.Interface = &boxPlatformInterfaceWrapper{}
-
-type boxPlatformInterfaceWrapper struct{}
+type boxPlatformInterfaceWrapper struct {
+	networkManager adapter.NetworkManager
+}
 
 func (w *boxPlatformInterfaceWrapper) ReadWIFIState() adapter.WIFIState {
 	state := strings.Split(intfBox.WIFIState(), ",")
@@ -36,6 +38,7 @@ func (w *boxPlatformInterfaceWrapper) ReadWIFIState() adapter.WIFIState {
 }
 
 func (w *boxPlatformInterfaceWrapper) Initialize(n adapter.NetworkManager) error {
+	w.networkManager = n
 	return nil
 }
 
@@ -85,7 +88,7 @@ func (w *boxPlatformInterfaceWrapper) UsePlatformDefaultInterfaceMonitor() bool 
 }
 
 func (w *boxPlatformInterfaceWrapper) CreateDefaultInterfaceMonitor(l logger.Logger) tun.DefaultInterfaceMonitor {
-	return &interfaceMonitorStub{}
+	return &androidInterfaceMonitor{platform: w}
 }
 
 func (w *boxPlatformInterfaceWrapper) UsePlatformInterfaceGetter() bool {
@@ -93,7 +96,19 @@ func (w *boxPlatformInterfaceWrapper) UsePlatformInterfaceGetter() bool {
 }
 
 func (w *boxPlatformInterfaceWrapper) Interfaces() ([]adapter.NetworkInterface, error) {
-	return nil, errors.New("wtf")
+	name := currentAndroidInterface()
+	if name == "" {
+		return nil, nil
+	}
+	iif, err := net.InterfaceByName(name)
+	if err != nil {
+		return nil, err
+	}
+	info, err := control.InterfaceFromNet(*iif)
+	if err != nil {
+		return nil, err
+	}
+	return []adapter.NetworkInterface{{Interface: info, Type: constant.InterfaceTypeOther}}, nil
 }
 
 func (w *boxPlatformInterfaceWrapper) IncludeAllNetworks() bool {

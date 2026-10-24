@@ -293,6 +293,7 @@ class BaseService {
             data.upstreamNetworkLost = false
             upstreamInterfaceName = null
             SagerNet.underlyingNetwork = null
+            Libcore.updateDefaultInterface("", false)
             data.networkListenerKey?.let { key ->
                 runOnDefaultDispatcher {
                     DefaultNetworkListener.stop(key)
@@ -360,6 +361,7 @@ class BaseService {
                     upstreamInterfaceName = SagerNet.connectivity.getLinkProperties(active)?.interfaceName
                 }
             }
+            Libcore.updateDefaultInterface(upstreamInterfaceName ?: "", true)
             val key = Any()
             data.networkListenerKey = key
             DefaultNetworkListener.start(key) { network, link ->
@@ -374,6 +376,7 @@ class BaseService {
                     // meanwhile, and local DNS fails instead of using a dead network
                     SagerNet.underlyingNetwork = null
                     DataStore.vpnService?.updateUnderlyingNetwork()
+                    Libcore.updateDefaultInterface("", true)
                     return@start
                 }
                 // The network is usable before link properties arrive. Android delivers those
@@ -391,14 +394,24 @@ class BaseService {
                 data.upstreamNetworkLost = false
                 if (link != null) upstreamInterfaceName = link.interfaceName
                 else if (oldNetwork != network) upstreamInterfaceName = null
+                val keepQuic = DataStore.keepQuicOnNetworkChange &&
+                    data.proxy?.usesQuic() == true
+                val resetOnChange = DataStore.networkChangeResetConnections && !keepQuic
+                // An interface notification makes sing-box reset its outbounds itself. For a
+                // same-interface reconnect or DNS/route update, the existing reset path applies.
+                // Always notify after a loss so the core wakes from its network pause state.
+                val coreReset = Libcore.updateDefaultInterface(
+                    upstreamInterfaceName ?: "",
+                    oldNetwork == null || wasLost || (oldNetwork != network && resetOnChange),
+                )
                 // A network can recover with the same identity, or change routes/DNS in place.
                 if (oldNetwork != null && (wasLost || oldNetwork != network || linkChanged)) {
                     Logs.d("Network changed: $oldNetwork/$oldName -> $network/$upstreamInterfaceName, link changed: $linkChanged")
                     if (DataStore.networkChangeResetConnections) {
-                        if (DataStore.keepQuicOnNetworkChange && data.proxy?.usesQuic() == true) {
+                        if (keepQuic && !wasLost) {
                             // QUIC migrates to the new network by itself; a reset would close it
                             Logs.d("Network changed, keep connections of QUIC proxy")
-                        } else {
+                        } else if (!coreReset) {
                             data.resetConnections("Network changed", true)
                         }
                     }
